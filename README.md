@@ -1,10 +1,12 @@
 ﻿# Noto Emoji Override / Noto Emoji 覆盖
 
 ## Overview / 概述
-- Wraps emoji sequences in lightweight spans so Chrome on Windows renders them with Google's Noto Emoji.
-- 通过脚本自动包裹 emoji 序列，让 Windows 版 Chrome 使用 Google Noto Emoji 渲染表情。
-- Comes with bundled Noto Emoji fonts as fallback when the system font is missing.
-- 内置 Noto Emoji 字体，即使系统未安装也可以显示 Google 风格表情。
+- **Smart Replacement**: Wraps emoji sequences in lightweight spans to apply Google's Noto Emoji font *only* to emojis, preserving the original font of the surrounding text.
+- **智能替换**: 通过脚本自动包裹 emoji 序列，仅对表情应用 Noto Emoji 字体，完美保留网页原有字体（如衬线体、等宽代码等）。
+- **SPA Support**: Supports Shadow DOM and dynamic content (e.g., ChatGPT, Gemini).
+- **SPA 支持**: 支持 Shadow DOM 和动态内容（如 ChatGPT, Gemini）。
+- **Fallback**: Comes with bundled Noto Emoji fonts.
+- **后备字体**: 内置 Noto Emoji 字体，即使系统未安装也可以显示 Google 风格表情。
 
 ## Installation / 安装
 1. Download or clone this repository.
@@ -20,7 +22,17 @@
 - Refresh pages (or open any page with emoji) to confirm the Noto Emoji style.
 - 刷新页面（或任意包含表情的页面）验证是否显示为 Noto 风格。
 
+## Technical Details / 技术细节
+- Uses `TreeWalker` and `MutationObserver` to efficiently scan and wrap emojis.
+- 使用 `TreeWalker` 和 `MutationObserver` 高效扫描并包裹表情。
+- Recursively traverses Shadow DOM to support Web Components.
+- 递归遍历 Shadow DOM 以支持 Web Components。
+- Skips `input`, `textarea`, and contentEditable elements to avoid interfering with editing.
+- 跳过 `input`, `textarea` 和可编辑元素，避免干扰输入。
+
 ## Known Issues / 已知问题
-- Very dynamic pages may momentarily show system emoji before the wrapper updates the DOM.
-- 动态刷新频繁的页面可能短暂出现系统表情，脚本会很快重新包裹。
+- Inputs and Textareas still use a global font override for emojis to work, which might affect the font of the entire input field.
+- 输入框和文本域为了显示表情，仍然使用整体字体覆盖，可能会影响输入框内的字体样式。
+- Very dynamic pages (streaming text) may momentarily show system emoji before the wrapper updates.
+- 极高频动态页面（如流式文本）可能短暂出现系统表情，脚本会很快重新包裹。
 

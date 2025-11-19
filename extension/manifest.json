@@ -1,51 +1,51 @@
 ﻿{
-    "manifest_version":  3,
-    "name":  "__MSG_appName__",
-    "description":  "__MSG_appDesc__",
-    "version":  "1.0.0",
-    "permissions":  [
-                        "storage",
-                        "tabs"
-                    ],
-    "action":  {
-                   "default_title":  "__MSG_actionTitle__",
-                   "default_popup":  "popup/popup.html",
-                   "default_icon":  {
-                                        "24":  "icons/icon32.png",
-                                        "16":  "icons/icon32.png",
-                                        "32":  "icons/icon32.png"
-                                    }
-               },
-    "content_scripts":  [
-                            {
-                                "matches":  [
-                                                "\u003call_urls\u003e"
-                                            ],
-                                "js":  [
-                                           "scripts/emoji-wrap.js",
-                                           "scripts/toggle.js"
-                                       ],
-                                "css":  [
-                                            "styles/emoji.css"
-                                        ],
-                                "run_at":  "document_start"
-                            }
-                        ],
-    "web_accessible_resources":  [
-                                     {
-                                         "resources":  [
-                                                           "fonts/Noto-COLRv1.ttf",
-                                                           "fonts/NotoColorEmoji.ttf"
-                                                       ],
-                                         "matches":  [
-                                                         "\u003call_urls\u003e"
-                                                     ]
-                                     }
-                                 ],
-    "short_name":  "__MSG_shortName__",
-    "icons":  {
-                  "128":  "icons/icon128.png",
-                  "32":  "icons/icon32.png"
-              },
-    "default_locale":  "en"
+    "manifest_version": 3,
+    "name": "__MSG_appName__",
+    "description": "__MSG_appDesc__",
+    "version": "1.0.0",
+    "permissions": [
+        "storage",
+        "tabs"
+    ],
+    "action": {
+        "default_title": "__MSG_actionTitle__",
+        "default_popup": "popup/popup.html",
+        "default_icon": {
+            "24": "icons/icon32.png",
+            "16": "icons/icon32.png",
+            "32": "icons/icon32.png"
+        }
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "\u003call_urls\u003e"
+            ],
+            "js": [
+                "scripts/toggle.js",
+                "scripts/emoji_replacer.js"
+            ],
+            "css": [
+                "styles/emoji.css"
+            ],
+            "run_at": "document_start"
+        }
+    ],
+    "web_accessible_resources": [
+        {
+            "resources": [
+                "fonts/Noto-COLRv1.ttf",
+                "fonts/NotoColorEmoji.ttf"
+            ],
+            "matches": [
+                "\u003call_urls\u003e"
+            ]
+        }
+    ],
+    "short_name": "__MSG_shortName__",
+    "icons": {
+        "128": "icons/icon128.png",
+        "32": "icons/icon32.png"
+    },
+    "default_locale": "en"
 }

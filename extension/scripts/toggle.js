@@ -19,14 +19,8 @@
 
     if (shouldEnable) {
       root.classList.add('noto-emoji-enabled');
-      if (window.__NotoEmojiWrapper && typeof window.__NotoEmojiWrapper.start === 'function') {
-        window.__NotoEmojiWrapper.start();
-      }
     } else {
       root.classList.remove('noto-emoji-enabled');
-      if (window.__NotoEmojiWrapper && typeof window.__NotoEmojiWrapper.stop === 'function') {
-        window.__NotoEmojiWrapper.stop();
-      }
     }
   }
 
