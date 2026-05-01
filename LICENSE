@@ -1,4 +1,8 @@
-﻿MIT License
+MIT License
+
+This license applies to the extension source code unless a file states
+otherwise. The bundled Noto Color Emoji font is a third-party asset under
+the SIL Open Font License 1.1; see THIRD_PARTY_LICENSES.md.
 
 Copyright (c) 2025 Haique
 

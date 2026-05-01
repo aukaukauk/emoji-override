@@ -1,6 +1,8 @@
-﻿(() => {
+(() => {
   const KEY_ENABLED = 'enabled';
   const KEY_BLOCKED = 'blockedHosts';
+  const ENABLED_CLASS = 'noto-emoji-enabled';
+
   const root = document.documentElement;
   const host = (location.hostname || '').toLowerCase();
 
@@ -8,53 +10,72 @@
 
   function normalizeList(list) {
     if (!Array.isArray(list)) return [];
-    return [...new Set(list.map((item) => (typeof item === 'string' ? item.toLowerCase() : '')))].filter(Boolean);
+    return [...new Set(list
+      .map((item) => (typeof item === 'string' ? item.toLowerCase().trim() : ''))
+      .filter(Boolean))];
   }
 
   function setActive(shouldEnable) {
     if (shouldEnable === lastActive) return;
     lastActive = shouldEnable;
 
-    if (!root) return;
-
     if (shouldEnable) {
-      root.classList.add('noto-emoji-enabled');
+      root.classList.add(ENABLED_CLASS);
     } else {
-      root.classList.remove('noto-emoji-enabled');
+      root.classList.remove(ENABLED_CLASS);
     }
   }
 
-  function evaluateState(data) {
-    const enabled = data && Object.prototype.hasOwnProperty.call(data, KEY_ENABLED)
-      ? Boolean(data[KEY_ENABLED])
+  function getStorage(area, keys) {
+    return new Promise((resolve) => {
+      try {
+        chrome.storage[area].get(keys, (data) => {
+          if (chrome.runtime.lastError) {
+            resolve({});
+            return;
+          }
+          resolve(data || {});
+        });
+      } catch (error) {
+        resolve({});
+      }
+    });
+  }
+
+  async function readState() {
+    const [syncData, localData] = await Promise.all([
+      getStorage('sync', [KEY_ENABLED, KEY_BLOCKED]),
+      getStorage('local', [KEY_BLOCKED])
+    ]);
+
+    const enabled = Object.prototype.hasOwnProperty.call(syncData, KEY_ENABLED)
+      ? Boolean(syncData[KEY_ENABLED])
       : true;
 
-    const blockedHosts = normalizeList(data ? data[KEY_BLOCKED] : []);
-    const isBlocked = host && blockedHosts.includes(host);
+    const blockedHosts = normalizeList(
+      Object.prototype.hasOwnProperty.call(localData, KEY_BLOCKED)
+        ? localData[KEY_BLOCKED]
+        : syncData[KEY_BLOCKED]
+    );
 
-    setActive(enabled && !isBlocked);
-  }
-
-  function readInitialState() {
-    try {
-      chrome.storage.sync.get([KEY_ENABLED, KEY_BLOCKED], evaluateState);
-    } catch (error) {
-      setActive(true);
-    }
+    setActive(enabled && !(host && blockedHosts.includes(host)));
   }
 
   function subscribe() {
     try {
       chrome.storage.onChanged.addListener((changes, areaName) => {
-        if (areaName !== 'sync') return;
-        if (!changes[KEY_ENABLED] && !changes[KEY_BLOCKED]) return;
-        chrome.storage.sync.get([KEY_ENABLED, KEY_BLOCKED], evaluateState);
+        const enabledChanged = areaName === 'sync' && Boolean(changes[KEY_ENABLED]);
+        const blockedChanged = (areaName === 'local' || areaName === 'sync') && Boolean(changes[KEY_BLOCKED]);
+
+        if (enabledChanged || blockedChanged) {
+          readState();
+        }
       });
     } catch (error) {
-      // ignore
+      // Ignore missing extension APIs in non-extension test contexts.
     }
   }
 
-  readInitialState();
+  readState();
   subscribe();
 })();

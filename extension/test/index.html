@@ -11,6 +11,10 @@
       p { margin: 0 0 16px 0; }
       .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin: 16px 0; }
       .box { padding: 12px; border: 1px solid #ddd; border-radius: 10px; background: #fafafa; }
+      .baseline-check { display: grid; gap: 8px; max-width: 760px; margin: 16px 0; }
+      .baseline-line { padding: 8px 12px; border: 1px solid #ddd; background: #fafafa; line-height: 1.6; }
+      .baseline-line.compact { line-height: 1.2; }
+      .baseline-line.large { font-size: 22px; }
       .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
       button { padding: 6px 12px; border-radius: 6px; border: 1px solid #888; background: #f2f2f2; cursor: pointer; }
       button:hover { background: #e9e9e9; }
@@ -25,6 +29,14 @@
       Make sure the extension is loaded and enabled. For local file testing, allow the extension to access file URLs in Chrome.
     </p>
 
+    <h2>Mixed Baseline Alignment</h2>
+    <div class="baseline-check">
+      <div class="baseline-line">Plain text line without emoji should keep the same row height.</div>
+      <div class="baseline-line">Mixed text before 😀 👍🏽 🇨🇳 👨‍👩‍👧‍👦 🏳️‍🌈 after text.</div>
+      <div class="baseline-line compact">Compact line before 😀 👍🏽 🇨🇳 after text.</div>
+      <div class="baseline-line large">Large text before 😀 👍🏽 🇨🇳 after text.</div>
+    </div>
+
     <h2>Common Faces</h2>
     <div class="grid">
       <div class="box">😀 😃 😄 😁 😆 😅 😂 🤣 😊 😇 🙂 🙃 😉 😌 😍 🥰 😘 😗 😙 😚 😋 😛 😝 😜 🤪 🤨 🧐 🤓 😎 🤩 🥳 😏 😒 😞 😔 😟 😕 🙁 ☹️ 😣 😖 😫 😩 🥺 😢 😭 😤 😠 😡 🤬</div>
@@ -34,6 +46,23 @@
     <h2>Hands + Skin Tones</h2>
     <div class="grid">
       <div class="box">👍🏻 👍🏼 👍🏽 👍🏾 👍🏿 👋🏻 👋🏼 👋🏽 👋🏾 👋🏿 🙌🏻 🙌🏼 🙌🏽 🙌🏾 🙌🏿</div>
+    </div>
+
+    <h2>Complex Sequences</h2>
+    <div class="grid">
+      <div class="box">☹️ ❤️ ♥️ ™️ ©️ ®️ 1️⃣ #️⃣ *️⃣</div>
+      <div class="box">👨‍👩‍👧‍👦 👩‍💻 🧑🏽‍🚀 🏳️‍🌈 🏴‍☠️</div>
+    </div>
+
+    <h2>Recent Emoji</h2>
+    <div class="grid">
+      <div class="box">🫩 🫆 🪾 🫜 🪉 🪏 🫟 🇨🇶</div>
+      <div class="box">🫪 🫯 🫈 🫍 🛘 🪊 🪎 🧑‍🩰</div>
+    </div>
+
+    <h2>Text Presentation (should stay unchanged)</h2>
+    <div class="grid">
+      <div class="box">© ™ ® ♥ ☹ 1 # *</div>
     </div>
 
     <h2>Flags + Transport</h2>
@@ -47,10 +76,17 @@ console.log(msg);
 // This block should keep its monospace font and not be overridden.
     </code></pre>
 
+    <h2>Editable Region (should stay unchanged)</h2>
+    <div class="box" contenteditable="true">Try editing this 😀 👍🏽 🇨🇳. The extension should not wrap editable text.</div>
+
+    <h2>Open Shadow DOM</h2>
+    <div id="shadow-host" class="box"></div>
+
     <h2>Dynamic Content</h2>
     <div class="row">
       <button id="add-emoji">Add dynamic emoji</button>
-      <div id="dynamic-target" class="box" style="flex:1; min-height: 44px;"></div>
+      <button id="add-shadow-emoji">Add shadow emoji</button>
+      <div id="dynamic-target" class="box" style="flex: 1; min-height: 44px;"></div>
     </div>
 
     <footer>
@@ -58,21 +94,38 @@ console.log(msg);
     </footer>
 
     <script>
-      (function(){
+      (() => {
         const btn = document.getElementById('add-emoji');
+        const shadowBtn = document.getElementById('add-shadow-emoji');
         const target = document.getElementById('dynamic-target');
         const samples = [
-          '😀','🙂','😉','😍','🥳','🤔','🙄','😴','🤯','🥵','🥶','🤒','🤕','👍🏻','👍🏽','👍🏿','🚀','✈️','🏍️','⛵','🇨🇳','🇺🇸','🇯🇵','🇬🇧'
+          '😀', '🙂', '😉', '😍', '🥳', '🤔', '🙄', '😴', '🤯',
+          '🥵', '🥶', '🤒', '🤕', '👍🏻', '👍🏽', '👍🏿',
+          '👨‍👩‍👧‍👦', '🏳️‍🌈', '❤️', '1️⃣', '🚀', '✈️', '🏍️',
+          '⛵', '🫩', '🫪', '🪊', '🇨🇳', '🇺🇸', '🇯🇵', '🇬🇧'
         ];
         let i = 0;
+
         btn.addEventListener('click', () => {
           const span = document.createElement('span');
-          span.textContent = ' ' + samples[i % samples.length] + ' ';
+          span.textContent = ` ${samples[i % samples.length]} `;
           target.appendChild(span);
+          i++;
+        });
+
+        const shadowHost = document.getElementById('shadow-host');
+        const shadowRoot = shadowHost.attachShadow({ mode: 'open' });
+        const shadowText = document.createElement('span');
+        shadowText.textContent = 'Open shadow root static text: 😀 👍🏽 🇨🇳 👨‍👩‍👧‍👦 🏳️‍🌈';
+        shadowRoot.appendChild(shadowText);
+
+        shadowBtn.addEventListener('click', () => {
+          const span = document.createElement('span');
+          span.textContent = ` ${samples[i % samples.length]} `;
+          shadowRoot.appendChild(span);
           i++;
         });
       })();
     </script>
   </body>
-  </html>
-
+</html>

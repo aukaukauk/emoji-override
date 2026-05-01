@@ -1,25 +1,42 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Noto Emoji Toggle</title>
+    <title>Noto Emoji Override</title>
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
-    <main>
-      <div class="row">
-        <button id="toggleBtn" type="button">Toggle</button>
-        <span id="status" aria-live="polite"></span>
-      </div>
-      <div class="row site-row">
-        <div class="site-info">
-          <span id="hostName">-</span>
-          <span id="siteState"></span>
+    <main class="popup-shell">
+      <header class="popup-header">
+        <div>
+          <p id="popupEyebrow" class="eyebrow">Emoji display</p>
+          <h1 id="popupHeading">Noto Emoji Override</h1>
+          <p id="popupSubtitle" class="subtitle"></p>
         </div>
-        <button id="siteBtn" type="button">Block This Site</button>
-      </div>
-      <p id="siteHint" class="hint">Site blocking is not available on this page.</p>
+        <span id="status" class="status-badge" aria-live="polite"></span>
+      </header>
+
+      <section class="panel" aria-labelledby="globalTitle">
+        <div class="panel-copy">
+          <h2 id="globalTitle"></h2>
+          <p id="globalDescription"></p>
+        </div>
+        <button id="toggleBtn" class="primary-action" type="button">Enable</button>
+      </section>
+
+      <section class="panel" aria-labelledby="siteTitle">
+        <div class="panel-copy">
+          <h2 id="siteTitle"></h2>
+          <p id="siteDescription"></p>
+          <p id="hostName" class="host-name">-</p>
+          <p id="siteState" class="site-state"></p>
+        </div>
+        <button id="siteBtn" class="secondary-action" type="button">Disable on this site</button>
+      </section>
+
+      <p id="siteHint" class="hint">Site controls are not available on this page.</p>
+      <p id="error" class="error" role="alert"></p>
     </main>
     <script src="popup.js"></script>
   </body>

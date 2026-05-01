@@ -1,37 +1,25 @@
-﻿/* Define the Noto Color Emoji font with a specific unicode range */
 @font-face {
-  font-family: 'Noto Color Emoji';
+  font-family: 'EmojiOverrideNoto';
   src: url('chrome-extension://__MSG_@@extension_id__/fonts/NotoColorEmoji.ttf');
-  /* 
-     This range covers:
-     - Standard Emoji (U+1F300-1FAFF)
-     - Emoticons (U+1F600-1F64F)
-     - Transport and Map Symbols (U+1F680-1F6FF)
-     - Miscellaneous Symbols and Pictographs (U+1F300-1F5FF)
-     - Supplemental Symbols and Pictographs (U+1F900-1F9FF)
-     - Symbols and Pictographs Extended-A (U+1FA70-1FAFF)
-     - Dingbats (U+2700-27BF)
-     - Miscellaneous Symbols (U+2600-26FF)
-     - Zero Width Joiner (U+200D)
-     - Variation Selector-16 (U+FE0F)
-  */
-  unicode-range: U+1F000-1FFFF, U+2600-27BF, U+2300-23FF, U+2B50, U+200D, U+FE0F;
 }
 
 /* 
-   When the extension is enabled, we inject the font globally.
-   We use a high-specificity selector to try and override site styles,
-   but we also include system-ui and sans-serif to ensure text remains readable.
+   Keep wrapped spans inert when the extension is disabled. The inline
+   var() on generated spans also lets open Shadow DOM content use the same
+   enable/disable switch when the custom property is inherited.
 */
+html.noto-emoji-enabled {
+  --emoji-override-font-family: 'EmojiOverrideNoto', system-ui, sans-serif;
+  --emoji-override-display: inline-block;
+  --emoji-override-font-size: 1em;
+  --emoji-override-line-height: 1;
+  --emoji-override-vertical-align: 0;
+}
+
 .noto-emoji-wrapped {
-  font-family: 'Noto Color Emoji', system-ui, sans-serif !important;
-}
-
-/* 
-   For inputs and textareas, we can't wrap the text, so we still apply the font directly.
-   This might change the font for the whole input, but it's necessary for emojis to show up.
-*/
-html.noto-emoji-enabled input,
-html.noto-emoji-enabled textarea {
-  font-family: 'Noto Color Emoji', system-ui, sans-serif !important;
+  display: var(--emoji-override-display, inline);
+  font-family: var(--emoji-override-font-family, inherit) !important;
+  font-size: var(--emoji-override-font-size, inherit);
+  line-height: var(--emoji-override-line-height, inherit);
+  vertical-align: var(--emoji-override-vertical-align, baseline);
 }
