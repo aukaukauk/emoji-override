@@ -30,7 +30,7 @@ Its scope is intentionally narrow: emoji are wrapped and styled separately, whil
 
 - Click the extension icon to enable or disable the override globally.
 - Use "Block This Site" or "Unblock This Site" to manage the current exact host.
-- Open `extension/test/index.html` after loading the extension to check common emoji sequences and dynamic content.
+- Open `tests/manual/index.html` after loading the extension to check common emoji sequences and dynamic content. Chrome runs an extension on a local file only after "Allow access to file URLs" has been switched on for it in `chrome://extensions`.
 
 Site blocking uses exact-host matching. For example, blocking `example.com` does not automatically block `sub.example.com`.
 

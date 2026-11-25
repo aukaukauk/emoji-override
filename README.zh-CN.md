@@ -30,7 +30,7 @@ Noto Emoji Override 是一个轻量级 Chrome 扩展，用于在网页中优先�
 
 - 点击扩展图标可以全局启用或停用 emoji 覆盖。
 - 使用 “Block This Site” 或 “Unblock This Site” 管理当前 exact host。
-- 加载扩展后，可以打开 `extension/test/index.html` 检查常见 emoji 序列和动态内容。
+- 加载扩展后，可以打开 `tests/manual/index.html` 检查常见 emoji 序列和动态内容。要让扩展在本地文件上运行，需要先在 `chrome://extensions` 里为它打开“允许访问文件网址”。
 
 站点屏蔽使用 exact-host 匹配。例如，屏蔽 `example.com` 不会自动屏蔽 `sub.example.com`。
 
