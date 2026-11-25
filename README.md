@@ -70,6 +70,7 @@ See `PRIVACY.md` for the full privacy policy.
 - Solid, and Svelte 3 and 4, skip a write when the text node already holds the new value. A wrapped text that such a page clears by setting it to an empty string stays visible.
 - On server-rendered pages, text that is wrapped before the page's framework takes over the markup counts as a mismatch. React then reports hydration errors and renders that part again in the browser. The page ends up correct.
 - A shadow root that is attached more than about half a minute after its element appeared, or after loading to an element that is not a custom element, is not found.
+- Chrome's built-in page translation treats each wrapper as a break in the sentence, so a sentence with an emoji in the middle is translated in pieces. No text or emoji is lost, and showing the original again works.
 - If a page uses unusual custom text rendering, the extension may not affect that content.
 
 ## Development
