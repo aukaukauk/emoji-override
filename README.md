@@ -12,7 +12,7 @@ Its scope is intentionally narrow: emoji are wrapped and styled separately, whil
 
 ## Features
 
-- Wraps emoji grapheme clusters in lightweight spans instead of applying a global `font-family`.
+- Wraps emoji grapheme clusters in lightweight spans instead of applying a global `font-family`. The spans use `display: contents`, so they add no box to the page layout.
 - Uses `Intl.Segmenter` to keep common emoji sequences together, including flags, skin tones, keycaps, and ZWJ sequences.
 - Handles dynamic page updates with `MutationObserver` only while the extension is active.
 - Supports open Shadow DOM roots when they can be discovered from the page.
@@ -68,4 +68,4 @@ See `PRIVACY.md` for the full privacy policy.
 
 ## Third-Party Assets
 
-The bundled `extension/fonts/NotoColorEmoji.ttf` file comes from Google Noto Emoji and is licensed separately under the SIL Open Font License 1.1. See `THIRD_PARTY_LICENSES.md`.
+The bundled `extension/fonts/NotoColorEmoji.ttf` file comes from Google Noto Emoji and is licensed separately under the SIL Open Font License 1.1. Its OpenType-SVG table, which Chrome does not use, has been removed to keep the package small. See `THIRD_PARTY_LICENSES.md`.

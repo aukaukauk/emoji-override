@@ -12,7 +12,7 @@ Noto Emoji Override 是一个轻量级 Chrome 扩展，用于在网页中优先�
 
 ## 功能
 
-- 用轻量 span 包裹 emoji 字素簇，而不是全局覆盖 `font-family`。
+- 用轻量 span 包裹 emoji 字素簇，而不是全局覆盖 `font-family`。这些 span 使用 `display: contents`，不会给页面布局增加盒子。
 - 使用 `Intl.Segmenter` 保持常见 emoji 序列完整，包括旗帜、肤色、keycap 和 ZWJ 序列。
 - 仅在扩展启用时使用 `MutationObserver` 处理动态页面更新。
 - 支持可发现的 open Shadow DOM root。
@@ -68,4 +68,4 @@ Noto Emoji Override 是一个轻量级 Chrome 扩展，用于在网页中优先�
 
 ## 第三方资源
 
-打包的 `extension/fonts/NotoColorEmoji.ttf` 文件来自 Google Noto Emoji，并按照 SIL Open Font License 1.1 单独授权。详情见 `THIRD_PARTY_LICENSES.md`。
+打包的 `extension/fonts/NotoColorEmoji.ttf` 文件来自 Google Noto Emoji，并按照 SIL Open Font License 1.1 单独授权。其中 Chrome 用不到的 OpenType-SVG 表已被移除，以减小安装包体积。详情见 `THIRD_PARTY_LICENSES.md`。

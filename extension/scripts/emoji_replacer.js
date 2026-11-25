@@ -183,11 +183,11 @@
     // `style`, in XML documents such as a feed shown by the browser's XML viewer.
     const span = document.createElementNS(HTML_NAMESPACE, 'span');
     span.classList.add(CLASS_NAME);
-    span.style.display = 'var(--emoji-override-display, inline)';
+    // Repeated inline because the stylesheet does not reach into shadow trees, while the
+    // inherited custom property does.
+    span.style.display = 'contents';
     span.style.fontFamily = 'var(--emoji-override-font-family, inherit)';
-    span.style.fontSize = 'var(--emoji-override-font-size, inherit)';
     span.style.lineHeight = 'var(--emoji-override-line-height, inherit)';
-    span.style.verticalAlign = 'var(--emoji-override-vertical-align, baseline)';
     span.textContent = text;
     return span;
   }
