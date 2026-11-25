@@ -193,6 +193,52 @@ describe('pages that keep hold of their text nodes', skipWithoutChrome, () => {
     });
   });
 
+  test('a framework that makes do with the nodes it finds keeps the ones it wrote to', async () => {
+    // Preact, and React before version 18, take over server-rendered markup like this: each
+    // piece of text they expect goes to the next text node they find, whatever it holds, and
+    // what is left over is removed. Where the server sent "<emoji> 12 stars" as one text and
+    // the script has two, the second one lands on a node of ours.
+    const result = await inPage(`<p id="p">${E.party} 12 stars</p>`, async (emoji, { tick, look }) => {
+      const paragraph = document.getElementById('p');
+      const found = [...paragraph.childNodes];
+      const nextText = () => {
+        const index = found.findIndex((node) => node && node.nodeType === Node.TEXT_NODE);
+        const node = found[index];
+        found[index] = null;
+        return node;
+      };
+      const claim = (text) => {
+        const node = nextText();
+        if (node.data !== text) node.data = text;
+        return node;
+      };
+
+      const first = claim(emoji.party);
+      const second = claim(' 12 stars');
+      for (const node of found) {
+        if (node) node.remove();
+      }
+      await tick();
+      const takenOver = look(paragraph);
+
+      second.data = ' 13 stars';
+      await tick();
+      const counted = look(paragraph);
+
+      first.data = emoji.rocket;
+      second.data = ` 14 stars ${emoji.grin}`;
+      await __t.settle();
+      return { takenOver, counted, both: look(paragraph), nodesKept: first.parentNode === paragraph && second.parentNode === paragraph };
+    }, E);
+
+    assert.deepEqual(result, {
+      takenOver: { text: `${E.party} 12 stars`, wrapped: 1 },
+      counted: { text: `${E.party} 13 stars`, wrapped: 1 },
+      both: { text: `${E.rocket} 14 stars ${E.grin}`, wrapped: 2 },
+      nodesKept: true
+    });
+  });
+
   test('a node that is taken out and put back later shows its text again', async () => {
     const result = await inPage(`<p id="p"><b>a</b>${E.grin} kept<i>z</i></p>`, async (arg, { tick, look }) => {
       const paragraph = document.getElementById('p');

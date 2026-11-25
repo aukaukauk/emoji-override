@@ -273,13 +273,19 @@
   }
 
   // Takes the pieces of a wrapped text out of the document. The anchor is the caller's business.
-  function discard(anchor) {
+  // Pieces in `taken` stay where they are, as ordinary nodes: the page has written to them, so
+  // they are the page's now.
+  function discard(anchor, taken) {
     const wrapped = wrappedTexts.get(anchor);
     if (!wrapped) return;
 
     wrappedTexts.delete(anchor);
     for (const piece of wrapped.pieces) {
       anchorOf.delete(piece);
+      if (taken && taken.has(piece)) {
+        scheduleWalk(piece);
+        continue;
+      }
       const parent = piece.parentNode;
       if (parent) removeChild.call(parent, piece);
     }
@@ -695,13 +701,13 @@
 
   // The page wrote to the anchor of a wrapped text: that is the new text, and our pieces show
   // the old one.
-  function pageWroteAnchor(anchor, wrapped, wroteOurs) {
+  function pageWroteAnchor(anchor, wrapped, taken) {
     const value = anchor.data;
 
     // A script that runs over every text node and writes each one back also writes the empty
     // anchor, and with it the canary and the rest of our text nodes. That is not the page
     // clearing its text.
-    if (value === '' && wroteOurs) return;
+    if (value === '' && taken.size) return;
 
     const { habit, wrap: when } = habits.afterWrite(habitOf.get(anchor), {
       wrapped: true,
@@ -710,7 +716,7 @@
     });
 
     if (habit) habitOf.set(anchor, habit);
-    discard(anchor);
+    discard(anchor, taken);
     wrapWhen(anchor, when);
   }
 
@@ -741,7 +747,9 @@
     const removed = new Map(); // node -> the parent the page took it from, the first time
     const crowded = new Set(); // anchors that got something put right behind them
     const disturbed = new Set(); // anchors with pieces the page removed or moved
-    let wroteOurs = false;
+    // Pieces of ours that the page wrote to. A framework that makes do with the nodes it finds
+    // when it takes over server-rendered markup, as Preact does, picks ours up as its own.
+    const taken = new Set();
 
     for (const record of records) {
       if (record.type === 'characterData') {
@@ -749,8 +757,10 @@
         // Comments change this way as well.
         if (node.nodeType !== Node.TEXT_NODE) continue;
 
-        if (anchorOf.has(node) || anchorOf.has(node.parentNode)) {
-          wroteOurs = true;
+        if (anchorOf.has(node)) {
+          taken.add(node);
+        } else if (anchorOf.has(node.parentNode)) {
+          taken.add(node.parentNode);
         } else if (!written.has(node)) {
           written.set(node, record.oldValue || '');
         }
@@ -796,7 +806,7 @@
         // The page took its text node out, so the text goes too. The node gets its text back:
         // some scripts put the same node in again later.
         const text = shownText(wrapped);
-        discard(node);
+        discard(node, taken);
         if (!written.has(node) && node.data === '') node.data = text;
       }
 
@@ -806,7 +816,7 @@
       for (const [node, before] of written) {
         const wrapped = wrappedTexts.get(node);
         if (wrapped) {
-          pageWroteAnchor(node, wrapped, wroteOurs);
+          pageWroteAnchor(node, wrapped, taken);
         } else {
           pageWroteText(node, before, added);
         }
