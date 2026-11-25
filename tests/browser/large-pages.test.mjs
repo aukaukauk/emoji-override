@@ -77,4 +77,29 @@ describe('large pages', skipWithoutChrome, () => {
     assert.deepEqual(page.errors, []);
     await page.close();
   });
+
+  test('are worked through in slices when they are a form that shadows DOM members', async () => {
+    const page = await browser.open({ init, body: '<div id="host"></div>' });
+
+    const result = await page.evaluate(async (html) => {
+      // Added as a whole, the form is where the walk starts, and what the walk asks of it between
+      // two slices must not be answered by one of its controls.
+      const form = document.createElement('form');
+      form.innerHTML = `${html}<input name="contains"><input name="isConnected"><input name="nodeType">`;
+      document.getElementById('host').appendChild(form);
+      await __t.sleep(0);
+
+      let slices = 0;
+      while (window.__slices.run() && slices < 500) {
+        slices += 1;
+        await __t.sleep(0);
+      }
+      return { slices, wrapped: Element.prototype.querySelectorAll.call(form, '.noto-emoji-wrapped').length };
+    }, paragraphs(300));
+
+    assert.equal(result.wrapped, 300);
+    assert.ok(result.slices >= 4, `${result.slices} slices`);
+    assert.deepEqual(page.errors, []);
+    await page.close();
+  });
 });

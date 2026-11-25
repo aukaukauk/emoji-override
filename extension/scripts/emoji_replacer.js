@@ -57,6 +57,7 @@
   const namespaceOf = prototypeGetter(Element.prototype, 'namespaceURI');
   const openShadowRootOf = prototypeGetter(Element.prototype, 'shadowRoot');
   const matchesSelector = Element.prototype.matches;
+  const containsNode = Node.prototype.contains;
   const insertBefore = Node.prototype.insertBefore;
   const removeChild = Node.prototype.removeChild;
 
@@ -451,7 +452,7 @@
       // The page may have removed the node the last slice stopped at, and a walker cannot find
       // its way back from a node that is no longer under its root. Start over: text that is
       // wrapped already costs next to nothing the second time.
-      if (walk.next && !root.contains(walk.next)) {
+      if (walk.next && !containsNode.call(root, walk.next)) {
         if (!root.isConnected) return true;
         walk.restarts += 1;
         texts.currentNode = root;
