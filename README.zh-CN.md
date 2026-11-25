@@ -68,4 +68,4 @@ Noto Emoji Override 是一个轻量级 Chrome 扩展，用于在网页中优先�
 
 ## 第三方资源
 
-打包的 `extension/fonts/NotoColorEmoji.ttf` 文件来自 Google Noto Emoji，并按照 SIL Open Font License 1.1 单独授权。详情见 `THIRD_PARTY_LICENSES.md`。
+打包的 `extension/fonts/NotoColorEmoji.ttf` 文件来自 Google Noto Emoji，并按照 SIL Open Font License 1.1 单独授权。其中 Chrome 用不到的 OpenType-SVG 表已被移除，以减小安装包体积。详情见 `THIRD_PARTY_LICENSES.md`。

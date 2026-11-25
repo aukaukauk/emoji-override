@@ -68,4 +68,4 @@ See `PRIVACY.md` for the full privacy policy.
 
 ## Third-Party Assets
 
-The bundled `extension/fonts/NotoColorEmoji.ttf` file comes from Google Noto Emoji and is licensed separately under the SIL Open Font License 1.1. See `THIRD_PARTY_LICENSES.md`.
+The bundled `extension/fonts/NotoColorEmoji.ttf` file comes from Google Noto Emoji and is licensed separately under the SIL Open Font License 1.1. Its OpenType-SVG table, which Chrome does not use, has been removed to keep the package small. See `THIRD_PARTY_LICENSES.md`.

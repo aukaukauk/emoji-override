@@ -5,6 +5,8 @@
 - File: `extension/fonts/NotoColorEmoji.ttf`
 - Source: https://github.com/googlefonts/noto-emoji
 - License: SIL Open Font License 1.1
+- Version: 2.051 (noto-emoji build 20250818, commit e92753bfa55fd449e427d4d325f9c8c40408c74e)
+- Modification: the OpenType-SVG table (`SVG `) has been removed with `tools/strip_svg_table.py` from this project's repository. Chrome draws the COLRv1 glyphs and does not read that table. All other tables are unchanged.
 
 Copyright 2022 Google Inc.
 
