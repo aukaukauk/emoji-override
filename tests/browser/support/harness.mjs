@@ -144,11 +144,13 @@ export function useBrowser() {
   // Opens a test document and returns the page. Unless `url` is given, the document is built
   // from `body` / `head` / `doctype` and loads the extension's content scripts as page scripts
   // (`extension: false` leaves them out). `stub` configures the chrome.* stand-in; `false`
-  // omits it, for pages that run under the real, installed extension.
-  browser.open = async ({ url, stub = {}, ...document } = {}) => {
+  // omits it, for pages that run under the real, installed extension. `init` is script source
+  // that runs in the document before anything else does.
+  browser.open = async ({ url, stub = {}, init, ...document } = {}) => {
     const page = await browser.chrome.newPage();
     await page.addInitScript(HELPERS);
     if (stub) await page.addInitScript(chromeStub(stub));
+    if (init) await page.addInitScript(init);
     await page.goto(url || browser.server.page(document));
     return page;
   };

@@ -167,14 +167,18 @@ console.log(msg);
       <button id="replace-body">Replace &lt;body&gt;</button>
     </div>
 
-    <h2>In-place Text Updates (known limitation)</h2>
+    <h2>Text Nodes the Page Keeps Using</h2>
     <p>
-      The button rewrites an existing text node through <code>nodeValue</code>, as framework bindings do.
-      This is not handled yet: the emoji keeps the platform font.
+      Frameworks keep the text nodes they created. The first button writes a new value to such a node through
+      <code>nodeValue</code>: the box must show exactly that value, with the emoji in Noto, on every click.
+      The second button takes the node out of the page and puts it back on the next click, which must not
+      raise an error or leave any text behind.
     </p>
     <div class="row">
       <button id="update-in-place">Update text in place</button>
+      <button id="toggle-in-place">Remove / restore the text node</button>
       <div id="in-place-target" class="box" style="flex: 1;">counter: 0</div>
+      <span id="in-place-status" class="status"></span>
     </div>
 
     <footer>
@@ -278,12 +282,23 @@ console.log(msg);
           document.body.replaceWith(body);
         });
 
-        const inPlaceNode = document.getElementById('in-place-target').firstChild;
+        const inPlaceTarget = document.getElementById('in-place-target');
+        const inPlaceStatus = document.getElementById('in-place-status');
+        const inPlaceNode = inPlaceTarget.firstChild;
         let inPlaceUpdates = 0;
         document.getElementById('update-in-place').addEventListener('click', () => {
           inPlaceUpdates++;
           inPlaceNode.nodeValue = `counter: ${inPlaceUpdates} ${samples[i % samples.length]}`;
           i++;
+        });
+        document.getElementById('toggle-in-place').addEventListener('click', () => {
+          try {
+            if (inPlaceNode.parentNode) inPlaceTarget.removeChild(inPlaceNode);
+            else inPlaceTarget.insertBefore(inPlaceNode, inPlaceTarget.firstChild);
+            inPlaceStatus.textContent = inPlaceNode.parentNode ? 'in the page' : 'taken out';
+          } catch (error) {
+            inPlaceStatus.textContent = `error: ${error.name}`;
+          }
         });
       })();
     </script>

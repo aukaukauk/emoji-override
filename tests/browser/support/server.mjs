@@ -42,6 +42,16 @@ export async function startServer({ port = 0 } = {}) {
     let type = TYPES[extname(path)] || 'application/octet-stream';
     let body = null;
 
+    // /delay/<ms> answers late with nothing. As an image source it holds back the load event.
+    const delay = /^\/delay\/(\d+)$/.exec(path);
+    if (delay) {
+      setTimeout(() => {
+        response.writeHead(204);
+        response.end();
+      }, Number(delay[1]));
+      return;
+    }
+
     if (pages.has(path)) {
       ({ body, type } = pages.get(path));
     } else if (path.startsWith('/extension/')) {

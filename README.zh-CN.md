@@ -13,11 +13,12 @@ Noto Emoji Override 是一个轻量级 Chrome 扩展，用于在网页中优先�
 ## 功能
 
 - 用轻量 span 包裹 emoji 字素簇，而不是全局覆盖 `font-family`。这些 span 使用 `display: contents`，不会给页面布局增加盒子。
+- 页面自己的文本节点保持在原位，因此 React、Vue、Preact、Lit、Angular 等会继续使用这些节点的脚本可以照常工作。
 - 使用 `Intl.Segmenter` 保持常见 emoji 序列完整，包括旗帜、肤色、keycap 和 ZWJ 序列。
-- 仅在扩展启用时使用 `MutationObserver` 处理动态页面更新。
-- 支持可发现的 open Shadow DOM root。
+- 仅在扩展启用时使用 `MutationObserver` 处理动态页面更新，包括脚本原地改写的文本。
+- 支持 open 和 closed 的 Shadow DOM root，包括元素出现后不久才挂载的 root。
 - 避免改写 `input`、`textarea`、`select`、`contenteditable`、`pre`、`code`、`kbd`、`samp` 等编辑或代码区域，以及 Monaco 和 Ace 代码编辑器的内部。
-- 提供全局启用/停用开关和 exact-host 站点屏蔽列表。
+- 提供全局启用/停用开关和 exact-host 站点屏蔽列表。关闭开关或屏蔽站点后，已打开页面里的文本会恢复原状。
 
 ## 安装
 
@@ -54,17 +55,22 @@ Noto Emoji Override 是一个轻量级 Chrome 扩展，用于在网页中优先�
 ## 技术说明
 
 - Emoji 检测基于字素分割和 Unicode emoji 相关属性。这比按单个 code point 拆分更安全，但它仍然不是完整的 Unicode emoji 一致性测试实现。
-- 被包裹的 emoji 使用 `font-family: var(--emoji-override-font-family, inherit)`，所以关闭扩展后，已经包裹过的 span 会在视觉上重新继承网页字体。
-- 扩展无法检查或修改 closed Shadow DOM。
-- 在动态更新非常频繁的页面上，新插入的内容可能会短暂显示为系统 emoji，然后再被队列中的 DOM 处理替换。
+- 含 emoji 的文本节点会被清空并留在原位，它的文字由紧跟在后面的节点显示：普通文本，以及每个 emoji 一个 span。页面之后再写入、移除或移动这个节点时，这些节点会随之被替换、移除或移动。
+- 关闭扩展时，添加的节点会被移除，每个文本节点恢复原来的文字。如果其他脚本在此期间改动过这些节点（例如调用 `normalize()`），包裹用的元素会留在页面里，但不再带有样式。
+- closed Shadow DOM root 通过 `chrome.dom.openOrClosedShadowRoot` 访问。
+- 处理工作放在浏览器空闲时分片进行，所以在动态更新非常频繁的页面上，新内容可能会短暂显示为系统 emoji，然后才被包裹。
+- 脚本原地改写的文本：如果已经确认该脚本每次都写入完整文本，会立即包裹；否则在文本停止变化后不久包裹。对流式输出的文本来说，就是在输出结束或暂停之后。
 
 ## 已知限制
 
 - `input` 和 `textarea` 不能单独包裹其中的 emoji 字符，因此扩展会保持这些区域不变。
 - 如果页面把 emoji 渲染成图片或 canvas 内容，则不在扩展处理范围内。
 - 内联 SVG 和 MathML 元素绘制的文字保持不变，因为 HTML 包裹元素在其中不会被渲染。`<foreignObject>` 里的 HTML 照常处理。
-- 页面原地改写的文本（例如通过 `nodeValue`）会继续使用系统 emoji。
-- 如果页面使用特殊的自定义文本渲染或 closed Shadow DOM，扩展可能无法影响这些内容。
+- 如果脚本是在文本节点上原地追加内容（`appendData`、`nodeValue +=`），而不是写入完整文本，扩展无法把它和“替换文本”区分开。因此仍在增长的文本要等停止后才会被包裹。如果这类脚本在停顿一两秒以上之后继续追加，它之前显示的文字会丢失一次，之后该节点不再被包裹。
+- Solid 以及 Svelte 3、4 在文本节点已经是新值时会跳过写入。这类页面把一段已被包裹的文字设为空字符串来清除时，文字会继续显示。
+- 在服务端渲染的页面上，如果文字在页面框架接管标记之前已被包裹，会被视为不一致。React 会报告 hydration 错误并在浏览器里重新渲染这一部分，页面最终是正确的。
+- 元素出现半分钟之后才挂载的 shadow root，或者页面加载完成后才挂载到非自定义元素上的 shadow root，不会被发现。
+- 如果页面使用特殊的自定义文本渲染，扩展可能无法影响这些内容。
 
 ## 开发
 

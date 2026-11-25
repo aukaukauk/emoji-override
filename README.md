@@ -13,11 +13,12 @@ Its scope is intentionally narrow: emoji are wrapped and styled separately, whil
 ## Features
 
 - Wraps emoji grapheme clusters in lightweight spans instead of applying a global `font-family`. The spans use `display: contents`, so they add no box to the page layout.
+- Leaves the page's own text nodes where they are, so scripts that keep using them, such as React, Vue, Preact, Lit and Angular, go on working.
 - Uses `Intl.Segmenter` to keep common emoji sequences together, including flags, skin tones, keycaps, and ZWJ sequences.
-- Handles dynamic page updates with `MutationObserver` only while the extension is active.
-- Supports open Shadow DOM roots when they can be discovered from the page.
+- Handles dynamic page updates with `MutationObserver` only while the extension is active, including text that a script changes in place.
+- Works inside shadow roots, open and closed, including ones that are attached shortly after their element appeared.
 - Avoids DOM rewriting in editing-sensitive areas such as `input`, `textarea`, `select`, `contenteditable`, `pre`, `code`, `kbd`, and `samp`, and inside the Monaco and Ace code editors.
-- Provides a global enable/disable switch and an exact-host block list.
+- Provides a global enable/disable switch and an exact-host block list. Switching off, or blocking a site, puts the text of open pages back as it was.
 
 ## Installation
 
@@ -54,17 +55,22 @@ See `PRIVACY.md` for the full privacy policy.
 ## Technical Notes
 
 - Emoji detection is based on grapheme segmentation plus Unicode emoji-related properties. This is safer than splitting by single code point, but it is still not a complete Unicode emoji conformance test suite.
-- Wrapped emoji use `font-family: var(--emoji-override-font-family, inherit)`, so turning the extension off makes already-wrapped spans visually inherit the page font again.
-- Closed Shadow DOM cannot be inspected or modified by the extension.
-- Very dynamic pages may briefly show the platform emoji before the queued DOM pass wraps new text.
+- A text node with emoji is emptied and stays in its place. Its text is shown by nodes placed right after it: plain text, and one span per emoji. When the page writes to its node again, removes it or moves it, those nodes are replaced, removed or moved with it.
+- Turning the extension off removes the added nodes and gives each text node its text back. Where another script has rearranged them in the meantime (with `normalize()`, for example), the wrappers stay in the page without their styling.
+- Closed shadow roots are reached through `chrome.dom.openOrClosedShadowRoot`.
+- Work is done in the browser's idle time, in slices, so very dynamic pages may briefly show the platform emoji before new text is wrapped.
+- Text that a script changes in place is wrapped at once when the script is known to set the whole text each time. Otherwise it is wrapped shortly after it has stopped changing, which for a streamed text means after the stream ends or pauses.
 
 ## Known Limitations
 
 - Inputs and textareas cannot have individual emoji characters wrapped, so the extension leaves them unchanged.
 - Pages that render emoji as images or canvas content are outside the scope of this extension.
 - Text drawn by inline SVG or MathML elements is left unchanged, because an HTML wrapper is not rendered there. HTML inside `<foreignObject>` is handled normally.
-- Text that a page rewrites in place (for example through `nodeValue`) keeps the platform emoji.
-- If a page uses unusual custom text rendering or closed Shadow DOM, the extension may not affect that content.
+- A script that appends to a text node in place (`appendData`, `nodeValue +=`) instead of setting the whole text cannot be told from one that replaces the text. Text that is still growing is therefore not wrapped until it stops. If such a script appends again after a pause of more than a second or two, the text it showed before is lost once, and the node is left unwrapped from then on.
+- Solid, and Svelte 3 and 4, skip a write when the text node already holds the new value. A wrapped text that such a page clears by setting it to an empty string stays visible.
+- On server-rendered pages, text that is wrapped before the page's framework takes over the markup counts as a mismatch. React then reports hydration errors and renders that part again in the browser. The page ends up correct.
+- A shadow root that is attached more than about half a minute after its element appeared, or after loading to an element that is not a custom element, is not found.
+- If a page uses unusual custom text rendering, the extension may not affect that content.
 
 ## Development
 

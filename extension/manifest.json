@@ -26,6 +26,7 @@
                 "scripts/settings.js",
                 "scripts/toggle.js",
                 "scripts/emoji_detect.js",
+                "scripts/write_habits.js",
                 "scripts/emoji_replacer.js"
             ],
             "css": [
