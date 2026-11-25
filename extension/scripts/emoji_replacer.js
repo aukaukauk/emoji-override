@@ -1,7 +1,9 @@
 (() => {
-  // Published by toggle.js, which runs first in the same isolated world.
-  const shared = globalThis.__notoEmojiOverride;
-  if (!shared || typeof shared.subscribe !== 'function') return;
+  // Published by toggle.js and emoji_detect.js, which run first in the same isolated world.
+  const { state, emoji } = globalThis.__notoEmojiOverride || {};
+  if (!state || !emoji) return;
+
+  const { splitGraphemes, hasEmojiCandidate, isEmojiCluster } = emoji;
 
   const CLASS_NAME = 'noto-emoji-wrapped';
   const HTML_NAMESPACE = 'http://www.w3.org/1999/xhtml';
@@ -57,33 +59,23 @@
   const START_RETRY_MS = 1000;
   const START_RETRY_LIMIT = 60;
 
-  const segmenter = typeof Intl !== 'undefined' && Intl.Segmenter
-    ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
-    : null;
-
-  const RECENT_EMOJI_REGEX = /[\u{1F6D8}\u{1FA89}\u{1FA8A}\u{1FA8E}\u{1FA8F}\u{1FABE}\u{1FAC6}\u{1FAC8}\u{1FACD}\u{1FADC}\u{1FADF}\u{1FAE9}\u{1FAEA}\u{1FAEF}]/u;
-  const BROAD_EMOJI_REGEX = /[‍️⃣]|\p{Emoji_Presentation}|\p{Regional_Indicator}|[\u{1F6D8}\u{1FA89}\u{1FA8A}\u{1FA8E}\u{1FA8F}\u{1FABE}\u{1FAC6}\u{1FAC8}\u{1FACD}\u{1FADC}\u{1FADF}\u{1FAE9}\u{1FAEA}\u{1FAEF}]/u;
-  const EMOJI_PRESENTATION_REGEX = /\p{Emoji_Presentation}/u;
-  const EMOJI_VARIATION_REGEX = /\p{Emoji}️/u;
-  const KEYCAP_REGEX = /^[#*0-9]️?⃣$/u;
-  const REGIONAL_PAIR_REGEX = /^\p{Regional_Indicator}{2}$/u;
-
   const requestIdle = window.requestIdleCallback || ((callback) => {
     return window.setTimeout(() => callback(), 50);
   });
 
+  const pendingRoots = new Set();
+  const contextCache = new Map();
+
   let observedRoots = new WeakSet();
   let observerActive = false;
-  let pendingRoots = new Set();
   let scheduled = false;
   let shadowDiscoveryTimer = null;
   let shadowDiscoveryPasses = 0;
   let startRetryTimer = null;
   let startRetries = 0;
-  let contextCache = new Map();
 
   function isActive() {
-    return shared.active;
+    return state.active;
   }
 
   function isElement(node) {
@@ -152,24 +144,6 @@
     }
 
     return skipped;
-  }
-
-  function splitGraphemes(text) {
-    if (!segmenter) return Array.from(text);
-    return Array.from(segmenter.segment(text), (item) => item.segment);
-  }
-
-  function hasEmojiCandidate(text) {
-    return BROAD_EMOJI_REGEX.test(text);
-  }
-
-  function isEmojiCluster(text) {
-    if (!text || text.includes('︎')) return false;
-    return KEYCAP_REGEX.test(text)
-      || REGIONAL_PAIR_REGEX.test(text)
-      || EMOJI_VARIATION_REGEX.test(text)
-      || RECENT_EMOJI_REGEX.test(text)
-      || EMOJI_PRESENTATION_REGEX.test(text);
   }
 
   function appendText(fragment, text) {
@@ -423,7 +397,7 @@
     }
   }
 
-  shared.subscribe(syncState);
+  state.subscribe(syncState);
   document.addEventListener('DOMContentLoaded', syncState, { once: true });
   syncState();
 })();

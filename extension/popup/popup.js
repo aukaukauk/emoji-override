@@ -1,80 +1,18 @@
 (() => {
-  const KEY_ENABLED = 'enabled';
-  const KEY_BLOCKED = 'blockedHosts';
+  // Published by scripts/settings.js, which popup.html loads first.
+  const { settings } = globalThis.__notoEmojiOverride;
 
   function msg(key) {
     return chrome.i18n.getMessage(key) || key;
   }
 
-  function hasOwn(object, key) {
-    return Object.prototype.hasOwnProperty.call(object, key);
-  }
-
-  function getStorage(area, keys) {
-    return new Promise((resolve, reject) => {
-      try {
-        chrome.storage[area].get(keys, (data) => {
-          const error = chrome.runtime.lastError;
-          if (error) {
-            reject(new Error(error.message));
-            return;
-          }
-          resolve(data || {});
-        });
-      } catch (error) {
-        reject(error);
-      }
-    });
-  }
-
-  function setStorage(area, payload) {
-    return new Promise((resolve, reject) => {
-      try {
-        chrome.storage[area].set(payload, () => {
-          const error = chrome.runtime.lastError;
-          if (error) {
-            reject(new Error(error.message));
-            return;
-          }
-          resolve();
-        });
-      } catch (error) {
-        reject(error);
-      }
-    });
-  }
-
-  function removeStorage(area, keys) {
-    return new Promise((resolve, reject) => {
-      try {
-        chrome.storage[area].remove(keys, () => {
-          const error = chrome.runtime.lastError;
-          if (error) {
-            reject(new Error(error.message));
-            return;
-          }
-          resolve();
-        });
-      } catch (error) {
-        reject(error);
-      }
-    });
-  }
-
-  function queryActiveTab() {
-    return new Promise((resolve) => {
-      try {
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-          if (chrome.runtime.lastError) {
-            resolve(null);
-            return;
-          }
-          resolve(Array.isArray(tabs) && tabs.length ? tabs[0] : null);
-        });
-      } catch (error) {
-        resolve(null);
-      }
-    });
+  async function queryActiveTab() {
+    try {
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      return Array.isArray(tabs) && tabs.length ? tabs[0] : null;
+    } catch {
+      return null;
+    }
   }
 
   function extractHost(url) {
@@ -84,46 +22,10 @@
       if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
         return parsed.hostname.toLowerCase();
       }
-    } catch (error) {
+    } catch {
       // Ignore invalid or privileged browser URLs.
     }
     return null;
-  }
-
-  function normalizeList(list) {
-    if (!Array.isArray(list)) return [];
-    return [...new Set(list
-      .map((item) => (typeof item === 'string' ? item.toLowerCase().trim() : ''))
-      .filter(Boolean))]
-      .sort();
-  }
-
-  async function readStateFromStorage({ migrateBlockedHosts = false } = {}) {
-    const [syncData, localData] = await Promise.all([
-      getStorage('sync', [KEY_ENABLED, KEY_BLOCKED]),
-      getStorage('local', [KEY_BLOCKED])
-    ]);
-
-    const enabled = hasOwn(syncData, KEY_ENABLED)
-      ? Boolean(syncData[KEY_ENABLED])
-      : true;
-
-    const syncBlockedHosts = normalizeList(syncData[KEY_BLOCKED]);
-    const localHasBlockedHosts = hasOwn(localData, KEY_BLOCKED);
-    const blockedHosts = normalizeList(
-      localHasBlockedHosts ? localData[KEY_BLOCKED] : syncBlockedHosts
-    );
-
-    if (migrateBlockedHosts && !localHasBlockedHosts && syncBlockedHosts.length) {
-      try {
-        await setStorage('local', { [KEY_BLOCKED]: syncBlockedHosts });
-        await removeStorage('sync', KEY_BLOCKED);
-      } catch (error) {
-        // Keep using the sync fallback if migration fails.
-      }
-    }
-
-    return { enabled, blockedHosts };
   }
 
   document.addEventListener('DOMContentLoaded', async () => {
@@ -206,20 +108,25 @@
       }
     }
 
-    async function refreshState(options) {
+    async function refreshState({ moveLegacyList = false } = {}) {
       try {
-        const state = await readStateFromStorage(options);
+        const state = await settings.read();
         enabled = state.enabled;
         blockedHosts = state.blockedHosts;
         updateDerivedState();
         setError('');
-      } catch (error) {
+
+        if (moveLegacyList && state.legacyBlockedHosts.length) {
+          // If the move fails, the list simply keeps being read from sync storage.
+          await settings.moveLegacyBlockedHosts(state.legacyBlockedHosts).catch(() => {});
+        }
+      } catch {
         setError(msg('errorLoad'));
       }
       render();
     }
 
-    await refreshState({ migrateBlockedHosts: true });
+    await refreshState({ moveLegacyList: true });
 
     toggleBtn.addEventListener('click', async () => {
       const previous = enabled;
@@ -229,8 +136,8 @@
       render();
 
       try {
-        await setStorage('sync', { [KEY_ENABLED]: enabled });
-      } catch (error) {
+        await settings.setEnabled(enabled);
+      } catch {
         enabled = previous;
         setError(msg('errorSave'));
       } finally {
@@ -252,15 +159,15 @@
         nextBlockedHosts.add(currentHost);
       }
 
-      blockedHosts = normalizeList(Array.from(nextBlockedHosts));
+      blockedHosts = settings.normalizeHosts([...nextBlockedHosts]);
       updateDerivedState();
       saving = true;
       setError('');
       render();
 
       try {
-        await setStorage('local', { [KEY_BLOCKED]: blockedHosts });
-      } catch (error) {
+        await settings.setBlockedHosts(blockedHosts);
+      } catch {
         blockedHosts = previousBlockedHosts;
         updateDerivedState();
         setError(msg('errorSave'));
@@ -270,13 +177,8 @@
       }
     });
 
-    chrome.storage.onChanged.addListener((changes, areaName) => {
-      const enabledChanged = areaName === 'sync' && Boolean(changes[KEY_ENABLED]);
-      const blockedChanged = (areaName === 'local' || areaName === 'sync') && Boolean(changes[KEY_BLOCKED]);
-
-      if (enabledChanged || blockedChanged) {
-        refreshState();
-      }
+    settings.onChange(() => {
+      refreshState();
     });
   });
 })();

@@ -23,7 +23,9 @@
                 "\u003call_urls\u003e"
             ],
             "js": [
+                "scripts/settings.js",
                 "scripts/toggle.js",
+                "scripts/emoji_detect.js",
                 "scripts/emoji_replacer.js"
             ],
             "css": [
