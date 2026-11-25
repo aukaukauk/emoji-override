@@ -66,6 +66,23 @@ See `PRIVACY.md` for the full privacy policy.
 - Text that a page rewrites in place (for example through `nodeValue`) keeps the platform emoji.
 - If a page uses unusual custom text rendering or closed Shadow DOM, the extension may not affect that content.
 
+## Development
+
+The extension in `extension/` is plain JavaScript and CSS. It has no dependencies and no build step, and Chrome loads the folder as it is. The tools around it need Node.js 22 or later.
+
+```bash
+npm install        # ESLint, which only the checks use
+npm run lint
+npm test           # unit tests, then browser tests
+npm run package    # dist/noto-emoji-override-<version>.zip
+```
+
+- `tests/unit/` checks emoji detection, the stored settings and the packaging script. It needs no browser.
+- `tests/browser/` loads the extension's scripts into pages in a headless Chrome and checks what they do there. One test file installs the extension itself. These tests use the Chrome installed on the machine and are skipped when there is none; set `CHROME_PATH` if it is in an unusual place.
+- `tests/manual/index.html` is a page to check by eye.
+
+`npm run package` builds the zip for the Chrome Web Store from `extension/` and adds `LICENSE`, `NOTICE`, `PRIVACY.md` and `THIRD_PARTY_LICENSES.md` from the repository root. Build releases this way and not by zipping the folder, because the font's license has to travel with the font. To run the browser tests against a built package, unpack it and set `EXTENSION_DIR` to that folder.
+
 ## Third-Party Assets
 
 The bundled `extension/fonts/NotoColorEmoji.ttf` file comes from Google Noto Emoji and is licensed separately under the SIL Open Font License 1.1. Its OpenType-SVG table, which Chrome does not use, has been removed to keep the package small. See `THIRD_PARTY_LICENSES.md`.

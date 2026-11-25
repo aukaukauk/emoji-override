@@ -66,6 +66,23 @@ Noto Emoji Override 是一个轻量级 Chrome 扩展，用于在网页中优先�
 - 页面原地改写的文本（例如通过 `nodeValue`）会继续使用系统 emoji。
 - 如果页面使用特殊的自定义文本渲染或 closed Shadow DOM，扩展可能无法影响这些内容。
 
+## 开发
+
+`extension/` 里的扩展是纯 JavaScript 和 CSS，没有依赖，也没有构建步骤，Chrome 直接加载这个文件夹。周边的工具需要 Node.js 22 或更高版本。
+
+```bash
+npm install        # ESLint，只有检查时用到
+npm run lint
+npm test           # 先跑单元测试，再跑浏览器测试
+npm run package    # dist/noto-emoji-override-<版本号>.zip
+```
+
+- `tests/unit/` 检查 emoji 识别、设置存储和打包脚本，不需要浏览器。
+- `tests/browser/` 把扩展的脚本加载到无头 Chrome 的页面里，检查它们在页面上的实际行为，其中一个测试文件会安装扩展本身。这些测试使用本机安装的 Chrome，找不到时会跳过；如果 Chrome 不在常见位置，请设置 `CHROME_PATH`。
+- `tests/manual/index.html` 是用来肉眼检查的页面。
+
+`npm run package` 会用 `extension/` 生成上传 Chrome 应用商店的 zip，并加入仓库根目录的 `LICENSE`、`NOTICE`、`PRIVACY.md` 和 `THIRD_PARTY_LICENSES.md`。发布时请用这个命令，而不是直接压缩文件夹，因为字体的许可证必须随字体一起分发。要对打好的包运行浏览器测试，把它解压后将 `EXTENSION_DIR` 设为解压出的文件夹即可。
+
 ## 第三方资源
 
 打包的 `extension/fonts/NotoColorEmoji.ttf` 文件来自 Google Noto Emoji，并按照 SIL Open Font License 1.1 单独授权。其中 Chrome 用不到的 OpenType-SVG 表已被移除，以减小安装包体积。详情见 `THIRD_PARTY_LICENSES.md`。
