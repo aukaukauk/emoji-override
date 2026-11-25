@@ -16,7 +16,7 @@ Noto Emoji Override 是一个轻量级 Chrome 扩展，用于在网页中优先�
 - 使用 `Intl.Segmenter` 保持常见 emoji 序列完整，包括旗帜、肤色、keycap 和 ZWJ 序列。
 - 仅在扩展启用时使用 `MutationObserver` 处理动态页面更新。
 - 支持可发现的 open Shadow DOM root。
-- 避免改写 `input`、`textarea`、`select`、`contenteditable`、`pre`、`code`、`kbd`、`samp` 等编辑或代码区域。
+- 避免改写 `input`、`textarea`、`select`、`contenteditable`、`pre`、`code`、`kbd`、`samp` 等编辑或代码区域，以及 Monaco 和 Ace 代码编辑器的内部。
 - 提供全局启用/停用开关和 exact-host 站点屏蔽列表。
 
 ## 安装
@@ -62,6 +62,8 @@ Noto Emoji Override 是一个轻量级 Chrome 扩展，用于在网页中优先�
 
 - `input` 和 `textarea` 不能单独包裹其中的 emoji 字符，因此扩展会保持这些区域不变。
 - 如果页面把 emoji 渲染成图片或 canvas 内容，则不在扩展处理范围内。
+- 内联 SVG 和 MathML 元素绘制的文字保持不变，因为 HTML 包裹元素在其中不会被渲染。`<foreignObject>` 里的 HTML 照常处理。
+- 页面原地改写的文本（例如通过 `nodeValue`）会继续使用系统 emoji。
 - 如果页面使用特殊的自定义文本渲染或 closed Shadow DOM，扩展可能无法影响这些内容。
 
 ## 第三方资源

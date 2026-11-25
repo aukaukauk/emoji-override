@@ -16,7 +16,7 @@ Its scope is intentionally narrow: emoji are wrapped and styled separately, whil
 - Uses `Intl.Segmenter` to keep common emoji sequences together, including flags, skin tones, keycaps, and ZWJ sequences.
 - Handles dynamic page updates with `MutationObserver` only while the extension is active.
 - Supports open Shadow DOM roots when they can be discovered from the page.
-- Avoids DOM rewriting in editing-sensitive areas such as `input`, `textarea`, `select`, `contenteditable`, `pre`, `code`, `kbd`, and `samp`.
+- Avoids DOM rewriting in editing-sensitive areas such as `input`, `textarea`, `select`, `contenteditable`, `pre`, `code`, `kbd`, and `samp`, and inside the Monaco and Ace code editors.
 - Provides a global enable/disable switch and an exact-host block list.
 
 ## Installation
@@ -62,6 +62,8 @@ See `PRIVACY.md` for the full privacy policy.
 
 - Inputs and textareas cannot have individual emoji characters wrapped, so the extension leaves them unchanged.
 - Pages that render emoji as images or canvas content are outside the scope of this extension.
+- Text drawn by inline SVG or MathML elements is left unchanged, because an HTML wrapper is not rendered there. HTML inside `<foreignObject>` is handled normally.
+- Text that a page rewrites in place (for example through `nodeValue`) keeps the platform emoji.
 - If a page uses unusual custom text rendering or closed Shadow DOM, the extension may not affect that content.
 
 ## Third-Party Assets

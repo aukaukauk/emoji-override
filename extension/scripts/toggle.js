@@ -1,12 +1,30 @@
 (() => {
   const KEY_ENABLED = 'enabled';
   const KEY_BLOCKED = 'blockedHosts';
-  const ENABLED_CLASS = 'noto-emoji-enabled';
+  const ENABLED_ATTRIBUTE = 'data-noto-emoji-enabled';
 
-  const root = document.documentElement;
+  // The marker is restored from a MutationObserver callback. A page that removes it every time
+  // would turn that into an endless loop, so past this rate the page is left alone.
+  const RESTORE_LIMIT = 20;
+  const RESTORE_WINDOW_MS = 1000;
+
   const host = (location.hostname || '').toLowerCase();
+  const listeners = new Set();
 
-  let lastActive = null;
+  // Whether emoji replacement is on for this document. emoji_replacer.js runs after this file in
+  // the same isolated world and takes the state from here, where page scripts cannot reach it.
+  // The attribute on <html> is only an output: it switches the stylesheet on.
+  const shared = {
+    active: false,
+    subscribe(listener) {
+      listeners.add(listener);
+    }
+  };
+  globalThis.__notoEmojiOverride = shared;
+
+  let markedRoot = null;
+  let restoreTimes = [];
+  let abandoned = false;
 
   function normalizeList(list) {
     if (!Array.isArray(list)) return [];
@@ -15,16 +33,60 @@
       .filter(Boolean))];
   }
 
-  function setActive(shouldEnable) {
-    if (shouldEnable === lastActive) return;
-    lastActive = shouldEnable;
+  function syncMarker() {
+    const root = document.documentElement;
+    if (!root) return;
 
-    if (shouldEnable) {
-      root.classList.add(ENABLED_CLASS);
-    } else {
-      root.classList.remove(ENABLED_CLASS);
+    if (root !== markedRoot) {
+      // First call, or the page swapped the root element (document.open, replaceChild).
+      markerObserver.disconnect();
+      markerObserver.observe(root, {
+        attributes: true,
+        attributeFilter: [ENABLED_ATTRIBUTE]
+      });
+      markedRoot = root;
+    }
+
+    if (!abandoned && root.hasAttribute(ENABLED_ATTRIBUTE) !== shared.active) {
+      root.toggleAttribute(ENABLED_ATTRIBUTE, shared.active);
     }
   }
+
+  function setActive(shouldEnable) {
+    const changed = shouldEnable !== shared.active;
+    shared.active = shouldEnable;
+    syncMarker();
+
+    if (changed) {
+      for (const listener of listeners) {
+        listener(shouldEnable);
+      }
+    }
+  }
+
+  // Pages rewrite <html> attributes wholesale (theme switches, client-side navigation) or replace
+  // the element itself (document.open), which takes the marker with it. Put it back, unless the
+  // page keeps undoing that.
+  function restoreMarker() {
+    const root = document.documentElement;
+    if (abandoned || !root) return;
+    if (root === markedRoot && root.hasAttribute(ENABLED_ATTRIBUTE) === shared.active) return;
+
+    const now = Date.now();
+    restoreTimes = restoreTimes.filter((time) => now - time < RESTORE_WINDOW_MS);
+    restoreTimes.push(now);
+
+    if (restoreTimes.length > RESTORE_LIMIT) {
+      abandoned = true;
+      setActive(false);
+      return;
+    }
+
+    syncMarker();
+  }
+
+  const markerObserver = new MutationObserver(restoreMarker);
+  const rootObserver = new MutationObserver(restoreMarker);
 
   function getStorage(area, keys) {
     return new Promise((resolve) => {
@@ -58,6 +120,9 @@
         : syncData[KEY_BLOCKED]
     );
 
+    // A settings change is a fresh start for a page that had been left alone.
+    abandoned = false;
+    restoreTimes = [];
     setActive(enabled && !(host && blockedHosts.includes(host)));
   }
 
@@ -76,6 +141,7 @@
     }
   }
 
+  rootObserver.observe(document, { childList: true });
   readState();
   subscribe();
 })();

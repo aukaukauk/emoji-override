@@ -8,7 +8,7 @@
    var() on generated spans also lets open Shadow DOM content use the same
    enable/disable switch when the custom property is inherited.
 */
-html.noto-emoji-enabled {
+html[data-noto-emoji-enabled] {
   --emoji-override-font-family: 'EmojiOverrideNoto', system-ui, sans-serif;
   --emoji-override-display: inline-block;
   --emoji-override-font-size: 1em;

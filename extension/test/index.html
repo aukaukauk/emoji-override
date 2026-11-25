@@ -19,6 +19,11 @@
       button { padding: 6px 12px; border-radius: 6px; border: 1px solid #888; background: #f2f2f2; cursor: pointer; }
       button:hover { background: #e9e9e9; }
       pre, code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 14px; }
+      .token-keyword { color: #a626a4; }
+      .token-string { color: #2f7d32; }
+      .token-comment { color: #8a8f98; }
+      .chip { padding: 0 6px; border: 1px solid #bbb; border-radius: 10px; }
+      .status { font-size: 14px; opacity: 0.8; }
       footer { margin-top: 28px; font-size: 12px; opacity: 0.75; }
     </style>
   </head>
@@ -76,8 +81,45 @@ console.log(msg);
 // This block should keep its monospace font and not be overridden.
     </code></pre>
 
+    <h2>Highlighted Code (should stay unchanged)</h2>
+    <pre><code><span class="token-keyword">const</span> msg = <span class="token-string">"nested span inside pre &gt; code 😀"</span>; <span class="token-comment">// 🎉 comment</span></code></pre>
+    <p>
+      Inline: <code>code with <b>bold 😀</b></code>, <kbd><span>Ctrl</span> + <span>😀</span></kbd>, <samp><i>output 👍</i></samp>
+    </p>
+    <div class="row">
+      <button id="add-code-emoji">Append emoji to code block</button>
+      <pre id="code-target" class="box" style="flex: 1; margin: 0; min-height: 44px;">appended: </pre>
+    </div>
+
+    <h2>Code Editor Surfaces (should stay unchanged)</h2>
+    <p>
+      Monaco and Ace draw each line with plain elements instead of <code>pre</code> or <code>contenteditable</code>.
+      These two boxes copy their markup.
+    </p>
+    <div class="monaco-editor box" role="code" style="font-family: ui-monospace, Menlo, monospace; font-size: 14px;">
+      <div class="view-lines">
+        <div class="view-line"><span><span class="mtk1">graph TD; A[Deploy 🚀] --&gt; B[Done ✅]</span></span></div>
+      </div>
+    </div>
+    <div class="ace_editor box" style="margin-top: 12px; font-family: ui-monospace, Menlo, monospace; font-size: 14px;">
+      <div class="ace_line"><span class="ace_keyword">const</span> msg = <span class="ace_string">"Hello 😀"</span>; <span class="ace_comment">// 🎉</span></div>
+    </div>
+
+    <h2>Inline SVG Text (should stay visible and unchanged)</h2>
+    <svg width="460" height="84" role="img" aria-label="SVG text with emoji">
+      <text x="6" y="30" font-size="22">Deploy 🚀 done ✅</text>
+      <text x="6" y="68" font-size="22">Total: <tspan font-weight="bold">42 🔥</tspan> items</text>
+    </svg>
+    <p>HTML inside <code>&lt;foreignObject&gt;</code> is ordinary HTML and should render with Noto:</p>
+    <svg width="460" height="40" role="img" aria-label="foreignObject with emoji">
+      <foreignObject width="460" height="40">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="font-size: 20px;">Label 🚀 inside foreignObject ✅</div>
+      </foreignObject>
+    </svg>
+
     <h2>Editable Region (should stay unchanged)</h2>
     <div class="box" contenteditable="true">Try editing this 😀 👍🏽 🇨🇳. The extension should not wrap editable text.</div>
+    <div class="box" contenteditable="true" style="margin-top: 12px;">Editor with a <span class="chip" contenteditable="false">read-only chip 😀</span> inside. Nothing inside an editor should be wrapped.</div>
 
     <h2>Open Shadow DOM</h2>
     <div id="shadow-host" class="box"></div>
@@ -87,6 +129,36 @@ console.log(msg);
       <button id="add-emoji">Add dynamic emoji</button>
       <button id="add-shadow-emoji">Add shadow emoji</button>
       <div id="dynamic-target" class="box" style="flex: 1; min-height: 44px;"></div>
+    </div>
+
+    <h2>Page Rewrites the Root Element</h2>
+    <p>
+      Each button does to <code>&lt;html&gt;</code> what some sites do on a theme switch or a client-side navigation.
+      Emoji must keep rendering with Noto afterwards, including ones added with "Add dynamic emoji" above.
+    </p>
+    <div class="row">
+      <button id="overwrite-root-class">Overwrite &lt;html&gt; class</button>
+      <button id="strip-root-attributes">Remove all &lt;html&gt; attributes</button>
+      <span id="root-status" class="status"></span>
+    </div>
+
+    <h2>Body Replacement</h2>
+    <p>
+      Swaps <code>&lt;body&gt;</code> for a new element, the way Turbo Drive navigates. Emoji in the new body,
+      and ones added to it afterwards, must render with Noto too. Reload to return to this page.
+    </p>
+    <div class="row">
+      <button id="replace-body">Replace &lt;body&gt;</button>
+    </div>
+
+    <h2>In-place Text Updates (known limitation)</h2>
+    <p>
+      The button rewrites an existing text node through <code>nodeValue</code>, as framework bindings do.
+      This is not handled yet: the emoji keeps the platform font.
+    </p>
+    <div class="row">
+      <button id="update-in-place">Update text in place</button>
+      <div id="in-place-target" class="box" style="flex: 1;">counter: 0</div>
     </div>
 
     <footer>
@@ -123,6 +195,78 @@ console.log(msg);
           const span = document.createElement('span');
           span.textContent = ` ${samples[i % samples.length]} `;
           shadowRoot.appendChild(span);
+          i++;
+        });
+
+        const codeTarget = document.getElementById('code-target');
+        document.getElementById('add-code-emoji').addEventListener('click', () => {
+          const span = document.createElement('span');
+          span.textContent = ` ${samples[i % samples.length]} `;
+          codeTarget.appendChild(span);
+          i++;
+        });
+
+        const root = document.documentElement;
+        const rootStatus = document.getElementById('root-status');
+        const reportMarker = () => {
+          window.setTimeout(() => {
+            rootStatus.textContent = root.hasAttribute('data-noto-emoji-enabled')
+              ? 'Marker attribute is present.'
+              : 'Marker attribute is missing (expected only while the extension is off for this page).';
+          }, 100);
+        };
+
+        document.getElementById('overwrite-root-class').addEventListener('click', () => {
+          root.className = 'theme-rewritten';
+          reportMarker();
+        });
+
+        document.getElementById('strip-root-attributes').addEventListener('click', () => {
+          for (const { name } of Array.from(root.attributes)) {
+            root.removeAttribute(name);
+          }
+          root.setAttribute('lang', 'en');
+          reportMarker();
+        });
+
+        document.getElementById('replace-body').addEventListener('click', () => {
+          const heading = document.createElement('h1');
+          heading.textContent = 'Replaced body 🚀';
+
+          const text = document.createElement('p');
+          text.textContent = 'This element replaced the previous <body>. 😀 👍🏽 🇨🇳 👨‍👩‍👧‍👦 🏳️‍🌈';
+
+          const addButton = document.createElement('button');
+          addButton.textContent = 'Add dynamic emoji';
+          const addTarget = document.createElement('div');
+          addTarget.className = 'box';
+          addTarget.style.cssText = 'flex: 1; min-height: 44px;';
+          addButton.addEventListener('click', () => {
+            const span = document.createElement('span');
+            span.textContent = ` ${samples[i % samples.length]} `;
+            addTarget.appendChild(span);
+            i++;
+          });
+          const row = document.createElement('div');
+          row.className = 'row';
+          row.append(addButton, addTarget);
+
+          const back = document.createElement('p');
+          const link = document.createElement('a');
+          link.href = location.href;
+          link.textContent = 'Reload the test page';
+          back.appendChild(link);
+
+          const body = document.createElement('body');
+          body.append(heading, text, row, back);
+          document.body.replaceWith(body);
+        });
+
+        const inPlaceNode = document.getElementById('in-place-target').firstChild;
+        let inPlaceUpdates = 0;
+        document.getElementById('update-in-place').addEventListener('click', () => {
+          inPlaceUpdates++;
+          inPlaceNode.nodeValue = `counter: ${inPlaceUpdates} ${samples[i % samples.length]}`;
           i++;
         });
       })();
