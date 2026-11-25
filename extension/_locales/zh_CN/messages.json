@@ -1,4 +1,5 @@
 {
+  "uiLanguage": { "message": "zh-CN" },
   "appName": { "message": "Noto Emoji Override" },
   "shortName": { "message": "Noto Emoji" },
   "appDesc": { "message": "在网页中优先显示 Google Noto Color Emoji，同时尽量保留网站原有文字字体。" },

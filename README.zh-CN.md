@@ -20,6 +20,7 @@ Noto Emoji Override 是一个轻量级 Chrome 扩展，用于在网页中优先�
 - 支持 open 和 closed 的 Shadow DOM root，包括元素出现后不久才挂载的 root。
 - 避免改写 `input`、`textarea`、`select`、`contenteditable`、`pre`、`code`、`kbd`、`samp` 等编辑或代码区域，以及 Monaco 和 Ace 代码编辑器的内部。
 - 提供全局启用/停用开关和 exact-host 站点屏蔽列表。关闭开关或屏蔽站点后，已打开页面里的文本会恢复原状。
+- 弹窗以及 Chrome 里显示的扩展名称和简介，已翻译成 Chrome 界面支持的全部语言，包括从右到左书写的语言。
 
 ## 安装
 
@@ -35,6 +36,7 @@ Noto Emoji Override 是一个轻量级 Chrome 扩展，用于在网页中优先�
 - 点击扩展图标，用“停用”或“启用”在所有网页上关闭或打开 emoji 覆盖。
 - 用同一个弹窗里的“在此站点停用”或“允许此站点”单独关闭或恢复当前站点（按 exact host）。
 - 两者都会立即对已打开的页面生效，不需要刷新。
+- 弹窗使用 Chrome 界面的语言显示，上面写的是简体中文界面下的名称。
 - 加载扩展后，可以打开 `tests/manual/index.html` 检查常见 emoji 序列和动态内容。要让扩展在本地文件上运行，需要先在 `chrome://extensions` 里为它打开“允许访问文件网址”。
 
 站点屏蔽使用 exact-host 匹配。例如，屏蔽 `example.com` 不会自动屏蔽 `sub.example.com`。
@@ -81,6 +83,15 @@ Noto Emoji Override 是一个轻量级 Chrome 扩展，用于在网页中优先�
 - Chrome 自带的网页翻译会把每个包裹元素当作句子的断点，所以中间带 emoji 的句子会被分段翻译。文字和 emoji 不会丢失，恢复显示原文也正常。
 - 如果页面使用特殊的自定义文本渲染，扩展可能无法影响这些内容。
 
+## 翻译
+
+弹窗里的文字，以及 Chrome 显示的扩展名称和简介，都放在 `extension/_locales/<locale>/messages.json` 里，每种语言一个文件夹。英文是原文，也是 Chrome 找不到对应语言时使用的文字。
+
+- Chrome 自身界面支持的每种语言、Chrome 应用商店支持的每个语言区域都有对应的文件夹，一共 55 个。Chrome 按自己界面语言的名字去找文件夹：挪威语在 Chrome 里叫 `nb`，在应用商店里叫 `no`，所以这两个文件夹都有，内容相同。
+- 每个文件在 `uiLanguage` 里写明自己的语言。弹窗用它设置 `lang` 属性和文字方向，因此在阿拉伯语、希伯来语、波斯语和乌尔都语下会从右到左排版。
+- 产品名称在所有语言里都一样。
+- 除英文和简体中文外，其他译文由机器生成，没有经过母语者审校。欢迎修正：改好对应语言的 `messages.json` 后运行 `npm run check`，它会检查简介是否超过应用商店允许的 132 个字符、每段文字在弹窗里是否都放得下等。
+
 ## 开发
 
 `extension/` 里的扩展是纯 JavaScript 和 CSS，没有依赖，也没有构建步骤，Chrome 直接加载这个文件夹。周边的工具需要 Node.js 22 或更高版本。
@@ -93,8 +104,8 @@ npm run check      # 先 lint，再跑全部测试
 npm run package    # dist/noto-emoji-override-<版本号>.zip
 ```
 
-- `tests/unit/` 检查 emoji 识别、设置存储、对页面原地改写文本的判断，以及打包脚本，不需要浏览器。
-- `tests/browser/` 把扩展的脚本加载到无头 Chrome 的页面里，检查它们在页面上的实际行为，其中一个测试文件会安装扩展本身。这些测试使用本机安装的 Chrome，找不到时会跳过；如果 Chrome 不在常见位置，请设置 `CHROME_PATH`。
+- `tests/unit/` 检查 emoji 识别、设置存储、对页面原地改写文本的判断、各语言的翻译文件，以及打包脚本，不需要浏览器。
+- `tests/browser/` 把扩展的脚本加载到无头 Chrome 的页面里，检查它们在页面上的实际行为，其中一个测试文件会安装扩展本身，还有一个会用每种语言打开弹窗。这些测试使用本机安装的 Chrome，找不到时会跳过；如果 Chrome 不在常见位置，请设置 `CHROME_PATH`。
 - `tests/manual/index.html` 是用来肉眼检查的页面。
 
 `npm run package` 会用 `extension/` 生成上传 Chrome 应用商店的 zip，并加入仓库根目录的 `LICENSE`、`NOTICE`、`PRIVACY.md` 和 `THIRD_PARTY_LICENSES.md`。发布时请用这个命令，而不是直接压缩文件夹，因为字体的许可证必须随字体一起分发。要对打好的包运行浏览器测试，把它解压后将 `EXTENSION_DIR` 设为解压出的文件夹即可。

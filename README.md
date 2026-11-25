@@ -20,6 +20,7 @@ Its scope is intentionally narrow: emoji are wrapped and styled separately, whil
 - Works inside shadow roots, open and closed, including ones that are attached shortly after their element appeared.
 - Avoids DOM rewriting in editing-sensitive areas such as `input`, `textarea`, `select`, `contenteditable`, `pre`, `code`, `kbd`, and `samp`, and inside the Monaco and Ace code editors.
 - Provides a global enable/disable switch and an exact-host block list. Switching off, or blocking a site, puts the text of open pages back as it was.
+- The popup, and the name and description that Chrome shows, are translated into every language that Chrome's interface comes in, the right-to-left ones included.
 
 ## Installation
 
@@ -35,6 +36,7 @@ The extension needs Chrome 111 or later.
 - Click the extension icon and use "Disable" or "Enable" to switch the override off or on everywhere.
 - Use "Disable on this site" or "Allow on this site" there to switch it off or back on for the current exact host.
 - Both take effect in open pages at once, without a reload.
+- The popup is shown in the language of Chrome's interface. The names above are the English ones.
 - Open `tests/manual/index.html` after loading the extension to check common emoji sequences and dynamic content. Chrome runs an extension on a local file only after "Allow access to file URLs" has been switched on for it in `chrome://extensions`.
 
 Site blocking uses exact-host matching. For example, blocking `example.com` does not automatically block `sub.example.com`.
@@ -81,6 +83,15 @@ See `PRIVACY.md` for the full privacy policy.
 - Chrome's built-in page translation treats each wrapper as a break in the sentence, so a sentence with an emoji in the middle is translated in pieces. No text or emoji is lost, and showing the original again works.
 - If a page uses unusual custom text rendering, the extension may not affect that content.
 
+## Translations
+
+The texts of the popup, and the name and description that Chrome shows, are in `extension/_locales/<locale>/messages.json`, one folder per language. English is the source, and what Chrome falls back to.
+
+- There is a folder for every language that Chrome's own interface comes in and for every locale of the Chrome Web Store, 55 in all. Chrome takes the texts from the folder named after the language of its interface. For Norwegian that is `nb`, while the Chrome Web Store calls the same language `no`, so both folders exist and hold the same texts.
+- Each file names its own language in `uiLanguage`. The popup takes its `lang` attribute and its direction from it, so it is laid out from right to left in Arabic, Hebrew, Persian and Urdu.
+- The product's name is the same in every language.
+- The translations other than English and Simplified Chinese were written by machine and have not been reviewed by native speakers. Corrections are welcome: change the `messages.json` of the language and run `npm run check`. It checks, among other things, that the description fits the 132 characters the Chrome Web Store allows and that every text has the room it needs in the popup.
+
 ## Development
 
 The extension in `extension/` is plain JavaScript and CSS. It has no dependencies and no build step, and Chrome loads the folder as it is. The tools around it need Node.js 22 or later.
@@ -93,8 +104,8 @@ npm run check      # lint, then all tests
 npm run package    # dist/noto-emoji-override-<version>.zip
 ```
 
-- `tests/unit/` checks emoji detection, the stored settings, the decisions about text that a page changes in place, and the packaging script. It needs no browser.
-- `tests/browser/` loads the extension's scripts into pages in a headless Chrome and checks what they do there. One test file installs the extension itself. These tests use the Chrome installed on the machine and are skipped when there is none; set `CHROME_PATH` if it is in an unusual place.
+- `tests/unit/` checks emoji detection, the stored settings, the decisions about text that a page changes in place, the translation files, and the packaging script. It needs no browser.
+- `tests/browser/` loads the extension's scripts into pages in a headless Chrome and checks what they do there. One test file installs the extension itself, and one opens the popup in every language. These tests use the Chrome installed on the machine and are skipped when there is none; set `CHROME_PATH` if it is in an unusual place.
 - `tests/manual/index.html` is a page to check by eye.
 
 `npm run package` builds the zip for the Chrome Web Store from `extension/` and adds `LICENSE`, `NOTICE`, `PRIVACY.md` and `THIRD_PARTY_LICENSES.md` from the repository root. Build releases this way and not by zipping the folder, because the font's license has to travel with the font. To run the browser tests against a built package, unpack it and set `EXTENSION_DIR` to that folder.

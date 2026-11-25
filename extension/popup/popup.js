@@ -6,6 +6,20 @@
     return chrome.i18n.getMessage(key) || key;
   }
 
+  // Languages that are written from right to left, among those the popup is translated into.
+  const RTL_LANGUAGES = new Set(['ar', 'fa', 'he', 'ur']);
+
+  // Marks the document with the language its texts are in. That is not always the language of
+  // the browser: where there is no translation for it, Chrome shows the English texts. Each
+  // messages.json therefore names its own language.
+  function applyLanguage() {
+    const language = chrome.i18n.getMessage('uiLanguage');
+    if (!language) return;
+
+    document.documentElement.lang = language;
+    document.documentElement.dir = RTL_LANGUAGES.has(language.split('-')[0]) ? 'rtl' : 'ltr';
+  }
+
   async function queryActiveTab() {
     try {
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -44,6 +58,7 @@
     const hintEl = document.getElementById('siteHint');
     const errorEl = document.getElementById('error');
 
+    applyLanguage();
     document.title = msg('popupTitle');
     popupEyebrowEl.textContent = msg('popupEyebrow');
     popupHeadingEl.textContent = msg('popupHeading');

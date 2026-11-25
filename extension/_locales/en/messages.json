@@ -1,4 +1,5 @@
 {
+  "uiLanguage": { "message": "en", "description": "The BCP 47 tag of the language this file is written in, not to be translated. The popup uses it as its lang attribute and takes the text direction from it." },
   "appName": { "message": "Noto Emoji Override" },
   "shortName": { "message": "Noto Emoji" },
   "appDesc": { "message": "Display webpage emoji with Google Noto Color Emoji while preserving each site's original text fonts." },
