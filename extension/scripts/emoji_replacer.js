@@ -1,7 +1,7 @@
 (() => {
   // Published by the scripts that run before this one in the same isolated world.
-  const { state, emoji, habits } = globalThis.__notoEmojiOverride || {};
-  if (!state || !emoji || !habits) return;
+  const { state, emoji, habits, hydration } = globalThis.__notoEmojiOverride || {};
+  if (!state || !emoji || !habits || !hydration) return;
 
   const { splitGraphemes, hasEmojiCandidate, isEmojiCluster } = emoji;
 
@@ -119,6 +119,11 @@
   let observedRoots = new WeakSet();
   // Shadow trees in which something was left undone because their host was out of the document.
   let missedRoots = new WeakSet();
+  // Markup that the server rendered is left alone until its framework has taken it over (see
+  // hydration.js). That is waited for once per document.
+  let holding = false;
+  let heldBefore = false;
+  let endHold = null;
   let observerActive = false;
   let scheduled = false;
   let walkQueue = [];
@@ -218,7 +223,7 @@
   // Wraps the emoji of one text node of the page. Returns the last text node it made, which is
   // where a walk through the document carries on, or null if there was nothing to wrap.
   function wrap(node) {
-    if (!isActive() || !node || node.nodeType !== Node.TEXT_NODE) return null;
+    if (!isActive() || holding || !node || node.nodeType !== Node.TEXT_NODE) return null;
     if (anchorOf.has(node) || pendingWraps.has(node) || habitOf.get(node) === 'held') return null;
 
     const parent = node.parentNode;
@@ -654,7 +659,9 @@
   }
 
   function scheduleWalk(root) {
-    if (!isActive() || !root) return;
+    // While server-rendered markup is held back nothing would be wrapped, so nothing is walked.
+    // When that ends, the document is walked as a whole.
+    if (!isActive() || !root || holding) return;
 
     pendingRoots.add(root);
     scheduleFlush();
@@ -750,6 +757,10 @@
     // Pieces of ours that the page wrote to. A framework that makes do with the nodes it finds
     // when it takes over server-rendered markup, as Preact does, picks ours up as its own.
     const taken = new Set();
+    // While the document is being parsed, what the parser adds may be the first sign of markup
+    // that a framework is going to take over.
+    const parsing = !heldBefore && document.readyState === 'loading';
+    let serverRendered = false;
 
     for (const record of records) {
       if (record.type === 'characterData') {
@@ -776,10 +787,13 @@
       if (record.addedNodes.length) {
         for (const node of record.addedNodes) {
           added.add(node);
+          if (parsing && !serverRendered && hydration.signOn(node)) serverRendered = true;
         }
         if (wrappedTexts.has(record.previousSibling)) crowded.add(record.previousSibling);
       }
     }
+
+    if (serverRendered) holdBack();
 
     try {
       for (const [node, parent] of removed) {
@@ -843,6 +857,32 @@
 
   const observer = new MutationObserver(handleMutations);
 
+  // The document holds markup that a framework is going to take over. What was wrapped before
+  // the signs of that showed up is put back, and nothing is wrapped until the framework is done.
+  function holdBack() {
+    if (holding || heldBefore) return;
+
+    holding = true;
+    heldBefore = true;
+    forgetWalks();
+    restoreAll();
+    settle();
+    endHold = hydration.whenTakenOver(letGo);
+  }
+
+  function letGo() {
+    endHold = null;
+    if (!holding) return;
+    holding = false;
+
+    // The walk that starts now does not meet the shadow roots it knows already as new ones.
+    for (const reference of shadowRoots) {
+      const root = reference.deref();
+      if (root) missedRoots.add(root);
+    }
+    scheduleWalk(bodyOf.call(document));
+  }
+
   function cancelStartRetry() {
     if (startRetryTimer) {
       window.clearInterval(startRetryTimer);
@@ -901,6 +941,7 @@
     // (Turbo-style navigation) or even the root element (document.open), and the replacement
     // then simply arrives as an added node.
     observeRoot(document);
+    if (hydration.signIn()) holdBack();
     scheduleWalk(body);
     rescanAfterLoad();
   }
@@ -923,6 +964,11 @@
     lateHosts.clear();
     forgetWalks();
     scheduled = false;
+
+    if (endHold) endHold();
+    endHold = null;
+    holding = false;
+    heldBefore = false;
 
     // Switched off means off: the page gets its text nodes back as they were.
     if (observerActive) restoreAll();

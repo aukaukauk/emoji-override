@@ -53,7 +53,7 @@ describe('the installed extension', skipWithoutChrome, () => {
       modules: Object.keys(globalThis.__notoEmojiOverride).sort(),
       host: location.hostname
     }));
-    assert.deepEqual(isolated, { active: true, modules: ['emoji', 'habits', 'settings', 'state'], host: '127.0.0.1' });
+    assert.deepEqual(isolated, { active: true, modules: ['emoji', 'habits', 'hydration', 'settings', 'state'], host: '127.0.0.1' });
 
     await inExtension(() => chrome.storage.sync.set({ enabled: false }));
     assert.equal(await marker(), false, 'global switch off');
@@ -122,6 +122,37 @@ describe('the installed extension', skipWithoutChrome, () => {
       written: { text: `asecond ${E.rocket} timez`, wrapped: 1 },
       removed: 'az'
     });
+    assert.deepEqual(page.errors, []);
+    await page.close();
+  });
+
+  test('waits for a framework whose books only scripts of the page can read', async () => {
+    // The page marks its nodes as React does, in its own world. The content scripts cannot see
+    // that from theirs: they have to be told by the one script that the manifest puts into the
+    // page's world. The slow script keeps the clock from giving the answer instead.
+    const page = await browser.open({
+      stub: false,
+      extension: false,
+      body: `<div id="__next"><p id="a">Hello <!-- -->${E.grin}</p></div><script src="/delay/1500" async></script>
+<script>
+  window.seen = {};
+  const wrapped = () => document.querySelectorAll('.noto-emoji-wrapped').length;
+  const container = document.getElementById('__next');
+  const root = (waiting) => {
+    container.__reactContainer$test = { stateNode: { current: { memoizedState: { isDehydrated: waiting } } } };
+  };
+  setTimeout(() => { window.seen.beforeReactStarts = wrapped(); root(true); }, 300);
+  setTimeout(() => { window.seen.whenReactIsDone = wrapped(); root(false); container.firstChild.__reactFiber$test = {}; }, 700);
+  setTimeout(() => { window.seen.rightAfter = wrapped(); }, 1000);
+</script>`
+    });
+
+    const result = await page.evaluate(async () => {
+      await __t.sleep(100);
+      return { ...window.seen, inTheEnd: document.querySelectorAll('.noto-emoji-wrapped').length };
+    });
+
+    assert.deepEqual(result, { beforeReactStarts: 0, whenReactIsDone: 0, rightAfter: 1, inTheEnd: 1 });
     assert.deepEqual(page.errors, []);
     await page.close();
   });
