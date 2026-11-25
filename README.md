@@ -12,7 +12,7 @@ Its scope is intentionally narrow: emoji are wrapped and styled separately, whil
 
 ## Features
 
-- Wraps emoji grapheme clusters in lightweight spans instead of applying a global `font-family`.
+- Wraps emoji grapheme clusters in lightweight spans instead of applying a global `font-family`. The spans use `display: contents`, so they add no box to the page layout.
 - Uses `Intl.Segmenter` to keep common emoji sequences together, including flags, skin tones, keycaps, and ZWJ sequences.
 - Handles dynamic page updates with `MutationObserver` only while the extension is active.
 - Supports open Shadow DOM roots when they can be discovered from the page.

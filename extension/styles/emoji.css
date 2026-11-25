@@ -3,23 +3,27 @@
   src: url('chrome-extension://__MSG_@@extension_id__/fonts/NotoColorEmoji.ttf');
 }
 
-/* 
+/*
    Keep wrapped spans inert when the extension is disabled. The inline
    var() on generated spans also lets open Shadow DOM content use the same
    enable/disable switch when the custom property is inherited.
 */
 html[data-noto-emoji-enabled] {
   --emoji-override-font-family: 'EmojiOverrideNoto', system-ui, sans-serif;
-  --emoji-override-display: inline-block;
-  --emoji-override-font-size: 1em;
   --emoji-override-line-height: 1;
-  --emoji-override-vertical-align: 0;
 }
 
+/*
+   `display: contents` keeps the wrapper out of layout. It generates no box, so text placed
+   directly in a flex or grid container is not split into separate items, and line breaking and
+   text decoration work as if the wrapper were not there.
+
+   The text inside still takes its font and line-height from the wrapper. A line-height of 1
+   stops the emoji font's taller metrics from stretching the line. (0 would rule that out
+   entirely, but in quirks-mode documents it collapses lines that hold nothing but emoji.)
+*/
 .noto-emoji-wrapped {
-  display: var(--emoji-override-display, inline);
+  display: contents;
   font-family: var(--emoji-override-font-family, inherit) !important;
-  font-size: var(--emoji-override-font-size, inherit);
   line-height: var(--emoji-override-line-height, inherit);
-  vertical-align: var(--emoji-override-vertical-align, baseline);
 }
