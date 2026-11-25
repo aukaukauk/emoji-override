@@ -46,17 +46,21 @@
 
   // A <form> exposes its controls as properties and a document exposes named forms and images,
   // so `form.parentNode`, `form.classList` or `document.body` may be an element the page gave
-  // that name. Where a wrong answer would throw or send a walk up the tree in circles, the
-  // lookup goes through the prototype instead.
+  // that name. Where a wrong answer would throw, send a walk up the tree in circles, or make a
+  // form that was removed look as if it were still in the document, the lookup goes through the
+  // prototype instead.
   const prototypeGetter = (prototype, name) => Object.getOwnPropertyDescriptor(prototype, name).get;
   const bodyOf = prototypeGetter(Document.prototype, 'body');
   const classListOf = prototypeGetter(Element.prototype, 'classList');
   const parentNodeOf = prototypeGetter(Node.prototype, 'parentNode');
   const nodeTypeOf = prototypeGetter(Node.prototype, 'nodeType');
+  const isConnectedOf = prototypeGetter(Node.prototype, 'isConnected');
   const localNameOf = prototypeGetter(Element.prototype, 'localName');
   const namespaceOf = prototypeGetter(Element.prototype, 'namespaceURI');
   const openShadowRootOf = prototypeGetter(Element.prototype, 'shadowRoot');
   const matchesSelector = Element.prototype.matches;
+  const querySelector = Element.prototype.querySelector;
+  const rootNodeOf = Node.prototype.getRootNode;
   const containsNode = Node.prototype.contains;
   const insertBefore = Node.prototype.insertBefore;
   const removeChild = Node.prototype.removeChild;
@@ -107,9 +111,14 @@
   const pendingRoots = new Set();
   const contextCache = new Map();
   const lateHosts = new Map();
+  // Weak references to the shadow roots that have been taken on, and to the elements that left
+  // the document with wrapped text in them (see watchDetached).
   const shadowRoots = new Set();
+  const detachedRoots = new Set();
 
   let observedRoots = new WeakSet();
+  // Shadow trees in which something was left undone because their host was out of the document.
+  let missedRoots = new WeakSet();
   let observerActive = false;
   let scheduled = false;
   let walkQueue = [];
@@ -217,7 +226,19 @@
 
     const text = node.data;
     if (!text || !hasEmojiCandidate(text)) return null;
+
+    // Text in an element that is out of the document waits until the element is back: only then
+    // is it known where the text ends up.
+    if (!node.isConnected) {
+      noteMissed(node);
+      return null;
+    }
+
     if (isSkippedContext(parent)) return null;
+
+    // Still wrapped although it holds text again: the page wrote to it where that could not be
+    // seen, and the pieces show the old text.
+    if (wrappedTexts.has(node)) discard(node);
 
     const pieces = [document.createTextNode('')];
     let plainText = '';
@@ -308,7 +329,13 @@
     const wrapped = wrappedTexts.get(anchor);
     if (!wrapped) return;
 
-    if (anchor.data !== '' || !isIntact(anchor, wrapped)) {
+    if (anchor.data !== '') {
+      // The page has written to it unseen. That is the text now, and ours is out of date.
+      discard(anchor);
+      return;
+    }
+
+    if (!isIntact(anchor, wrapped)) {
       release(anchor);
       return;
     }
@@ -328,9 +355,11 @@
 
   function restoreAll() {
     const roots = [document];
-    for (const reference of shadowRoots) {
-      const root = reference.deref();
-      if (root) roots.push(root);
+    for (const references of [shadowRoots, detachedRoots]) {
+      for (const reference of references) {
+        const root = reference.deref();
+        if (root) roots.push(root);
+      }
     }
 
     for (const root of roots) {
@@ -354,6 +383,41 @@
     observedRoots.add(root);
   }
 
+  // Adds a weak reference to one of the two sets above, and now and then drops the references
+  // whose object is gone.
+  function remember(references, object) {
+    references.add(new WeakRef(object));
+    if (references.size % 256 !== 0) return;
+
+    for (const reference of references) {
+      if (!reference.deref()) references.delete(reference);
+    }
+  }
+
+  // A page may go on working on an element that it has taken out of the document, and put it
+  // back later: a cached view, a row of a list that is used again. What it does in there to a
+  // wrapped text has to be seen, or our nodes would still show the old text when the element
+  // returns.
+  function watchDetached(root) {
+    if (observedRoots.has(root) || !querySelector.call(root, `.${CLASS_NAME}`)) return;
+
+    observeRoot(root);
+    remember(detachedRoots, root);
+  }
+
+  // Nothing is wrapped outside the document. A light tree is walked as a whole when it comes
+  // back, because it arrives as an added node. A shadow tree does not arrive, its host does, so
+  // the shadow roots around `node` are marked to be walked again when their hosts are met.
+  function noteMissed(node) {
+    let top = rootNodeOf.call(node);
+    let host = hostOf(top);
+    while (host) {
+      missedRoots.add(top);
+      top = rootNodeOf.call(host);
+      host = hostOf(top);
+    }
+  }
+
   // Open shadow roots are a property of their host. Closed ones are reachable for extensions
   // through chrome.dom, which does not exist when these scripts run as page scripts in a test.
   const canOpenClosedRoots = typeof chrome !== 'undefined' && Boolean(chrome.dom && chrome.dom.openOrClosedShadowRoot);
@@ -369,10 +433,15 @@
   }
 
   function adoptShadowRoot(root) {
-    if (!isActive() || observedRoots.has(root)) return;
+    if (!isActive()) return;
+
+    if (observedRoots.has(root)) {
+      if (missedRoots.delete(root)) scheduleWalk(root);
+      return;
+    }
 
     observeRoot(root);
-    shadowRoots.add(new WeakRef(root));
+    remember(shadowRoots, root);
     scheduleWalk(root);
   }
 
@@ -430,7 +499,11 @@
   function beginWalk(root) {
     // Nodes that left the document before their turn are skipped. If they come back they are
     // queued again.
-    if (!root || !root.isConnected) return null;
+    if (!root) return null;
+    if (!isConnectedOf.call(root)) {
+      noteMissed(root);
+      return null;
+    }
 
     if (nodeTypeOf.call(root) === Node.TEXT_NODE) {
       wrap(root);
@@ -448,12 +521,17 @@
     const { root, texts } = walk;
     const unhurried = walk.restarts > WALK_RESTART_LIMIT;
 
+    // The page cannot take the root out while a slice is running, only between two of them.
+    if (!isConnectedOf.call(root)) {
+      noteMissed(root);
+      return true;
+    }
+
     if (!walk.elements) {
       // The page may have removed the node the last slice stopped at, and a walker cannot find
       // its way back from a node that is no longer under its root. Start over: text that is
       // wrapped already costs next to nothing the second time.
       if (walk.next && !containsNode.call(root, walk.next)) {
-        if (!root.isConnected) return true;
         walk.restarts += 1;
         texts.currentNode = root;
         walk.next = texts.nextNode();
@@ -475,7 +553,6 @@
       }
 
       walk.next = null;
-      if (!root.isConnected) return true;
 
       if (isElement(root)) lookForShadowRoot(root);
       walk.elements = queryAll(root, '*');
@@ -661,7 +738,7 @@
 
     const written = new Map(); // text node of the page -> its text before these changes
     const added = new Set();
-    const removed = new Set();
+    const removed = new Map(); // node -> the parent the page took it from, the first time
     const crowded = new Set(); // anchors that got something put right behind them
     const disturbed = new Set(); // anchors with pieces the page removed or moved
     let wroteOurs = false;
@@ -681,7 +758,7 @@
       }
 
       for (const node of record.removedNodes) {
-        removed.add(node);
+        if (!removed.has(node)) removed.set(node, record.target);
         const anchor = anchorOf.get(node);
         if (anchor) disturbed.add(anchor);
       }
@@ -695,7 +772,7 @@
     }
 
     try {
-      for (const node of removed) {
+      for (const [node, parent] of removed) {
         const wrapped = wrappedTexts.get(node);
         if (!wrapped) continue;
 
@@ -707,8 +784,9 @@
         }
 
         const [canary, ...pieces] = wrapped.pieces;
-        if (removed.has(canary) && pieces.some((piece) => piece.isConnected)) {
-          // The canary went together with the anchor while the text stayed. Whoever did that
+        if (removed.has(canary) && pieces.some((piece) => piece.isConnected || piece.parentNode === parent)) {
+          // The canary went together with the anchor while the text stayed: in the document,
+          // or where it was in an element that is itself out of the document. Whoever did that
           // was clearing out empty text nodes, as Node.normalize() does, and did not mean the
           // text. It stays, as ordinary nodes.
           release(node);
@@ -722,9 +800,10 @@
         if (!written.has(node) && node.data === '') node.data = text;
       }
 
+      // Also in an element that is out of the document. Nothing is wrapped there, but pieces
+      // that show an old text have to go, and a write says the same about its script as it
+      // does anywhere else.
       for (const [node, before] of written) {
-        if (!node.isConnected) continue;
-
         const wrapped = wrappedTexts.get(node);
         if (wrapped) {
           pageWroteAnchor(node, wrapped, wroteOurs);
@@ -734,7 +813,7 @@
       }
 
       for (const anchor of crowded) {
-        if (anchor.isConnected && !disturbed.has(anchor)) follow(anchor);
+        if (!disturbed.has(anchor)) follow(anchor);
       }
 
       for (const node of added) {
@@ -742,6 +821,10 @@
         if ((type === Node.TEXT_NODE || type === Node.ELEMENT_NODE) && !anchorOf.has(node)) {
           scheduleWalk(node);
         }
+      }
+
+      for (const node of removed.keys()) {
+        if (isElement(node) && !isConnectedOf.call(node)) watchDetached(node);
       }
     } finally {
       settle();
@@ -835,7 +918,9 @@
     if (observerActive) restoreAll();
 
     shadowRoots.clear();
+    detachedRoots.clear();
     observedRoots = new WeakSet();
+    missedRoots = new WeakSet();
     observerActive = false;
   }
 

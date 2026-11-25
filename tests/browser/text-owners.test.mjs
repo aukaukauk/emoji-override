@@ -236,6 +236,227 @@ describe('pages that keep hold of their text nodes', skipWithoutChrome, () => {
     });
   });
 
+  // A cached view, or a row that a list uses again, is out of the document for a while, and its
+  // script goes on working on it there. The element is not being observed then, so it has to be
+  // followed on purpose.
+  test('what the page does to a text while its element is out of the document shows when the element returns', async () => {
+    const result = await inPage('<div id="host"></div>', async (emoji, { look }) => {
+      const host = document.getElementById('host');
+      const element = (name, text) => Object.assign(document.createElement(name), { textContent: text });
+      const changes = {
+        'left alone': () => {},
+        'a new text with emoji': (own) => { own.data = `count ${emoji.party} 4`; },
+        'a new text without emoji': (own) => { own.data = 'none'; },
+        'the text cleared': (own) => { own.data = ''; },
+        'the node taken out': (own, paragraph) => { paragraph.removeChild(own); },
+        'the node replaced': (own, paragraph) => { paragraph.replaceChild(document.createTextNode('other'), own); },
+        'something put right behind the node': (own, paragraph) => { paragraph.insertBefore(element('u', 'X'), own.nextSibling); }
+      };
+
+      const seen = {};
+      for (const [name, change] of Object.entries(changes)) {
+        const paragraph = document.createElement('p');
+        const own = document.createTextNode(`count ${emoji.grin} 3`);
+        paragraph.append(element('b', '['), own, element('i', ']'));
+        host.appendChild(paragraph);
+        await __t.settle();
+
+        paragraph.remove();
+        await __t.sleep(20);
+        change(own, paragraph);
+        await __t.sleep(20);
+        const out = paragraph.textContent;
+
+        host.appendChild(paragraph);
+        await __t.settle();
+        seen[name] = { out, ...look(paragraph) };
+        paragraph.remove();
+      }
+      return seen;
+    }, E);
+
+    const same = (text, wrapped) => ({ out: text, text, wrapped });
+    assert.deepEqual(result, {
+      'left alone': same(`[count ${E.grin} 3]`, 1),
+      'a new text with emoji': same(`[count ${E.party} 4]`, 1),
+      'a new text without emoji': same('[none]', 0),
+      'the text cleared': same('[]', 0),
+      'the node taken out': same('[]', 0),
+      'the node replaced': same('[other]', 0),
+      'something put right behind the node': same(`[count ${E.grin} 3X]`, 1)
+    });
+  });
+
+  test('tidying up an element that is out of the document does not lose its text', async () => {
+    const result = await inPage(`<div id="host"><p id="p"><b>[</b>Tidy ${E.party} up<i>]</i></p></div>`, async (arg, { look }) => {
+      const paragraph = document.getElementById('p');
+      const host = paragraph.parentNode;
+
+      paragraph.remove();
+      await __t.sleep(20);
+      paragraph.normalize();
+      await __t.sleep(20);
+      const out = paragraph.textContent;
+
+      host.appendChild(paragraph);
+      await __t.settle();
+      return { out, back: look(paragraph) };
+    });
+
+    assert.deepEqual(result, {
+      out: `[Tidy ${E.party} up]`,
+      back: { text: `[Tidy ${E.party} up]`, wrapped: 1 }
+    });
+  });
+
+  test('text written while its element is out of the document is not wrapped before it is known where the element ends up', async () => {
+    const result = await inPage(`<div id="host"><p id="p"><b>[</b>first ${E.grin}<i>]</i></p></div><pre id="code"></pre>`, async (emoji, { look }) => {
+      const paragraph = document.getElementById('p');
+      const own = paragraph.childNodes[1];
+
+      paragraph.remove();
+      await __t.sleep(20);
+      own.data = `second ${emoji}`;
+      await __t.sleep(20);
+      const out = look(paragraph);
+
+      // It comes back inside a place that is left alone.
+      document.getElementById('code').appendChild(paragraph);
+      await __t.settle();
+      return { out, back: look(paragraph) };
+    }, E.rocket);
+
+    assert.deepEqual(result, {
+      out: { text: `[second ${E.rocket}]`, wrapped: 0 },
+      back: { text: `[second ${E.rocket}]`, wrapped: 0 }
+    });
+  });
+
+  test('a shadow tree that changes while its host is out of the document is caught up with when the host returns', async () => {
+    const result = await inPage('<div id="host"></div>', async (emoji) => {
+      const host = document.getElementById('host');
+      const changes = {
+        'a wrapped text rewritten': { start: `unread ${emoji.grin} 3`, change: (own) => { own.data = `unread ${emoji.grin} 4`; } },
+        'a plain text replaced by one with emoji': { start: 'unread', change: (own) => { own.data = `read ${emoji.party}`; } },
+        'a paragraph added': { start: 'unread', change: (own, root) => { root.appendChild(document.createElement('p')).textContent = `new ${emoji.party}`; } }
+      };
+
+      const seen = {};
+      for (const [name, { start, change }] of Object.entries(changes)) {
+        const widget = document.createElement('x-widget');
+        const root = widget.attachShadow({ mode: 'open' });
+        root.innerHTML = `<p><b>[</b>${start}<i>]</i></p>`;
+        host.appendChild(widget);
+        await __t.settle();
+
+        widget.remove();
+        await __t.sleep(20);
+        change(root.querySelector('p').childNodes[1], root);
+        await __t.sleep(20);
+        const out = { text: root.textContent, wrapped: __t.count(root) };
+
+        host.appendChild(widget);
+        await __t.settle();
+        seen[name] = { out, back: { text: root.textContent, wrapped: __t.count(root) } };
+      }
+      return seen;
+    }, E);
+
+    const caughtUp = (text) => ({ out: { text, wrapped: 0 }, back: { text, wrapped: 1 } });
+    assert.deepEqual(result, {
+      'a wrapped text rewritten': caughtUp(`[unread ${E.grin} 4]`),
+      'a plain text replaced by one with emoji': caughtUp(`[read ${E.party}]`),
+      'a paragraph added': caughtUp(`[unread]new ${E.party}`)
+    });
+  });
+
+  test('a text that grows while its host is out of the document is still wrapped only once it has stopped', async () => {
+    const result = await inPage('<div id="host"></div>', async (emoji, { WAIT }) => {
+      const host = document.getElementById('host');
+      const widget = document.createElement('x-widget');
+      const root = widget.attachShadow({ mode: 'open' });
+      root.innerHTML = '<p>Hi</p>';
+      host.appendChild(widget);
+      await __t.settle();
+      const own = root.querySelector('p').firstChild;
+
+      widget.remove();
+      await __t.sleep(20);
+      own.appendData(' there');
+      await __t.sleep(20);
+      own.appendData(` ${emoji}`);
+      await __t.sleep(20);
+
+      host.appendChild(widget);
+      await __t.settle();
+      const back = __t.count(root);
+      await __t.sleep(WAIT.later + 200);
+      return { back, settled: __t.count(root), text: root.textContent };
+    }, E.grin);
+
+    assert.deepEqual(result, { back: 0, settled: 1, text: `Hi there ${E.grin}` });
+  });
+
+  test('an element that is out of the document when the extension is switched off gets its text back as well', async () => {
+    const result = await inPage(`<div id="host"><p id="p"><b>[</b>kept ${E.grin} view<i>]</i></p></div>`, async (emoji) => {
+      const paragraph = document.getElementById('p');
+      const own = paragraph.childNodes[1];
+      const host = paragraph.parentNode;
+
+      paragraph.remove();
+      await __t.sleep(20);
+      await chrome.storage.sync.set({ enabled: false });
+      await __t.settle();
+      const off = { ownNodeHolds: own.data, wrapped: __t.count(paragraph), nodes: paragraph.childNodes.length };
+
+      // Nobody is looking now. What the page writes has to be all there is to show.
+      own.data = `kept ${emoji} view, updated`;
+      host.appendChild(paragraph);
+      await __t.settle();
+      return { off, shown: paragraph.textContent };
+    }, E.rocket);
+
+    assert.deepEqual(result, {
+      off: { ownNodeHolds: `kept ${E.grin} view`, wrapped: 0, nodes: 3 },
+      shown: `[kept ${E.rocket} view, updated]`
+    });
+  });
+
+  // An element that moves into the document of a frame is still "connected", but nothing sees
+  // what happens to it there. When it is back, its text node holds text while our nodes show
+  // the old one.
+  test('a text that was changed unseen is shown once, when it is wrapped again and when the extension is switched off', async () => {
+    const result = await inPage(`<div id="host"><p id="a"><b>[</b>frame ${E.grin} 1<i>]</i></p><p id="b"><b>[</b>frame ${E.grin} 1<i>]</i></p></div><iframe id="frame"></iframe>`, async (emoji, { look }) => {
+      const host = document.getElementById('host');
+      const elsewhere = document.getElementById('frame').contentDocument.body;
+      const first = document.getElementById('a');
+      const second = document.getElementById('b');
+
+      for (const paragraph of [first, second]) {
+        const own = paragraph.childNodes[1];
+        elsewhere.appendChild(paragraph);
+        await __t.sleep(20);
+        own.data = `frame ${emoji} 2`;
+        await __t.sleep(20);
+      }
+
+      host.appendChild(first);
+      await __t.settle();
+      const wrappedAgain = look(first);
+
+      // The second one comes back and the extension goes off before it has been looked at.
+      host.appendChild(second);
+      await chrome.storage.sync.set({ enabled: false });
+      await __t.settle();
+      return { wrappedAgain, switchedOff: look(second) };
+    }, E.rocket);
+
+    assert.deepEqual(result, {
+      wrappedAgain: { text: `[frame ${E.rocket} 2]`, wrapped: 1 },
+      switchedOff: { text: `[frame ${E.rocket} 2]`, wrapped: 0 }
+    });
+  });
+
   test('a text that grows is wrapped once it has stopped, and at once from then on', async () => {
     const result = await inPage('<p id="p">Hi</p>', async (emoji, { tick, look, WAIT }) => {
       const paragraph = document.getElementById('p');
@@ -373,6 +594,13 @@ describe('pages that keep hold of their text nodes', skipWithoutChrome, () => {
 
         const failures = [];
         for (let step = 0; step < 400 && failures.length < 3; step++) {
+          // Now and then the paragraph as a whole leaves the document or comes back. The script
+          // goes on working on it either way.
+          if (random() < 0.06) {
+            if (paragraph.isConnected) paragraph.remove();
+            else document.body.appendChild(paragraph);
+          }
+
           const item = pick(own);
           const action = random();
 
@@ -416,6 +644,7 @@ describe('pages that keep hold of their text nodes', skipWithoutChrome, () => {
           if (step % 97 === 96) await __t.settle();
         }
 
+        if (!paragraph.isConnected) document.body.appendChild(paragraph);
         await __t.settle();
         if (shown() !== meant()) failures.push(`in the end: shows ${JSON.stringify(shown())}, meant ${JSON.stringify(meant())}`);
         return failures;

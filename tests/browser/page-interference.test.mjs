@@ -178,4 +178,38 @@ describe('pages that rework the document', skipWithoutChrome, () => {
     assert.deepEqual(page.errors, []);
     await page.close();
   });
+
+  test('such forms are followed out of the document and back like any other element', { timeout: 20000 }, async () => {
+    const members = ['isConnected', 'querySelector', 'querySelectorAll', 'getRootNode', 'contains', 'parentNode', 'nodeType', 'firstChild'];
+    const page = await browser.open({
+      body: members.map((name) => `<form data-member="${name}"><b>[</b>before ${E.grin}<i>]</i><input name="${name}"></form>`).join('')
+    });
+
+    const result = await page.evaluate(async (emoji) => {
+      await __t.settle();
+      const text = (form) => Object.getOwnPropertyDescriptor(Node.prototype, 'textContent').get.call(form);
+      const count = (form) => Element.prototype.querySelectorAll.call(form, '.noto-emoji-wrapped').length;
+      const seen = {};
+
+      for (const form of [...document.querySelectorAll('form[data-member]')]) {
+        const own = Object.getOwnPropertyDescriptor(Node.prototype, 'childNodes').get.call(form)[1];
+        Element.prototype.remove.call(form);
+        await __t.sleep(20);
+        own.data = 'after';
+        await __t.sleep(20);
+        document.body.appendChild(form);
+        await __t.settle();
+        const back = `${text(form)} /${count(form)}`;
+
+        own.data = `again ${emoji}`;
+        await __t.settle();
+        seen[Element.prototype.getAttribute.call(form, 'data-member')] = `${back}, then ${text(form)} /${count(form)}`;
+      }
+      return seen;
+    }, E.rocket);
+
+    assert.deepEqual(result, Object.fromEntries(members.map((name) => [name, `[after] /0, then [again ${E.rocket}] /1`])));
+    assert.deepEqual(page.errors, []);
+    await page.close();
+  });
 });

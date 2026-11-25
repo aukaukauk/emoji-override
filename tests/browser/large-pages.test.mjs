@@ -102,4 +102,45 @@ describe('large pages', skipWithoutChrome, () => {
     assert.deepEqual(page.errors, []);
     await page.close();
   });
+
+  test('finish a shadow tree whose host was out of the document in the middle of it', async () => {
+    const page = await browser.open({ init, body: '<div id="host"></div>' });
+
+    const result = await page.evaluate(async (html) => {
+      const host = document.getElementById('host');
+      const widget = document.createElement('x-list');
+      const root = widget.attachShadow({ mode: 'open' });
+      root.innerHTML = html;
+      host.appendChild(widget);
+      await __t.sleep(0);
+
+      const run = async (until = () => false) => {
+        let slices = 0;
+        while (!until() && window.__slices.run() && slices < 500) {
+          slices += 1;
+          await __t.sleep(0);
+        }
+      };
+
+      await run(() => __t.count(root) > 0);
+      const started = __t.count(root);
+
+      // Nothing is wrapped outside the document, and the walk is given up.
+      widget.remove();
+      await __t.sleep(0);
+      await run();
+      const whileOut = __t.count(root);
+
+      host.appendChild(widget);
+      await __t.sleep(0);
+      await run();
+      return { started, whileOut, wrapped: __t.count(root) };
+    }, paragraphs(300));
+
+    assert.ok(result.started > 0 && result.started < 300, `the first slices wrapped ${result.started}`);
+    assert.equal(result.whileOut, result.started);
+    assert.equal(result.wrapped, 300);
+    assert.deepEqual(page.errors, []);
+    await page.close();
+  });
 });

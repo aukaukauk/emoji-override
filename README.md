@@ -55,7 +55,7 @@ See `PRIVACY.md` for the full privacy policy.
 ## Technical Notes
 
 - Emoji detection is based on grapheme segmentation plus Unicode emoji-related properties. This is safer than splitting by single code point, but it is still not a complete Unicode emoji conformance test suite.
-- A text node with emoji is emptied and stays in its place. Its text is shown by nodes placed right after it: plain text, and one span per emoji. When the page writes to its node again, removes it or moves it, those nodes are replaced, removed or moved with it.
+- A text node with emoji is emptied and stays in its place. Its text is shown by nodes placed right after it: plain text, and one span per emoji. When the page writes to its node again, removes it or moves it, those nodes are replaced, removed or moved with it. That also holds while the element around it is out of the document, as a cached view is; text is only wrapped inside the document, so new text in such an element is wrapped when the element comes back.
 - Turning the extension off removes the added nodes and gives each text node its text back. Where another script has rearranged them in the meantime (with `normalize()`, for example), the wrappers stay in the page without their styling.
 - Closed shadow roots are reached through `chrome.dom.openOrClosedShadowRoot`.
 - Work is done in the browser's idle time, in slices, so very dynamic pages may briefly show the platform emoji before new text is wrapped.
