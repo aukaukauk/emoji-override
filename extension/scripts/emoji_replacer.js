@@ -3,7 +3,7 @@
   const { state, emoji, habits, hydration } = globalThis.__notoEmojiOverride || {};
   if (!state || !emoji || !habits || !hydration) return;
 
-  const { splitGraphemes, hasEmojiCandidate, isEmojiCluster } = emoji;
+  const { hasEmojiCandidate, splitAtEmoji } = emoji;
 
   const CLASS_NAME = 'noto-emoji-wrapped';
   const HTML_NAMESPACE = 'http://www.w3.org/1999/xhtml';
@@ -64,6 +64,7 @@
   const containsNode = Node.prototype.contains;
   const insertBefore = Node.prototype.insertBefore;
   const removeChild = Node.prototype.removeChild;
+  const cloneNode = Node.prototype.cloneNode;
 
   // start() needs a <body>. If there is none yet it looks again at this interval, for a while.
   const START_RETRY_MS = 1000;
@@ -78,7 +79,8 @@
   const WALK_RESTART_LIMIT = 3;
 
   // A custom element may get its shadow root long after it entered the page, and nothing
-  // announces that. Elements without one are looked at again after 1, 2, 4, ... ticks.
+  // announces that. Elements without one are looked at again 1, 2, 4, ... ticks after they were
+  // first seen, for the last time after HOST_CHECK_TICKS.
   const HOST_CHECK_MS = 250;
   const HOST_CHECK_TICKS = 128;
 
@@ -109,8 +111,16 @@
   const pendingWraps = new Map();
 
   const pendingRoots = new Set();
+  // Nodes that the page put into a node whose walk is still to come: that walk meets them, so
+  // they get none of their own. A page that builds its content node by node, and the parser,
+  // would otherwise have every node walked once for each of the nodes above it.
+  const covered = new Set();
   const contextCache = new Map();
-  const lateHosts = new Map();
+  // Custom elements without a shadow root that are looked at again later: the tick at which that
+  // is due -> [element, ticks since it was first seen, element, ticks, ...]
+  const hostChecks = new Map();
+  let waitingHosts = new WeakSet();
+  let hostTick = 0;
   // Weak references to the shadow roots that have been taken on, and to the elements that left
   // the document with wrapped text in them (see watchDetached).
   const shadowRoots = new Set();
@@ -124,6 +134,10 @@
   let holding = false;
   let heldBefore = false;
   let endHold = null;
+  // Whether anything has been wrapped in this document so far. Until then no node in it is one
+  // of ours, and what the page removes or moves needs no looking at.
+  let wrappedBefore = false;
+  let spanTemplate = null;
   let observerActive = false;
   let scheduled = false;
   let walkQueue = [];
@@ -207,15 +221,20 @@
   }
 
   function createEmojiSpan(text) {
-    // The namespace is spelled out because createElement() makes a plain XML element, without
-    // `style`, in XML documents such as a feed shown by the browser's XML viewer.
-    const span = document.createElementNS(HTML_NAMESPACE, 'span');
-    span.classList.add(CLASS_NAME);
-    // Repeated inline because the stylesheet does not reach into shadow trees, while the
-    // inherited custom property does.
-    span.style.display = 'contents';
-    span.style.fontFamily = 'var(--emoji-override-font-family, inherit)';
-    span.style.lineHeight = 'var(--emoji-override-line-height, inherit)';
+    if (!spanTemplate) {
+      // The namespace is spelled out because createElement() makes a plain XML element, without
+      // `style`, in XML documents such as a feed shown by the browser's XML viewer.
+      spanTemplate = document.createElementNS(HTML_NAMESPACE, 'span');
+      spanTemplate.classList.add(CLASS_NAME);
+      // Repeated inline because the stylesheet does not reach into shadow trees, while the
+      // inherited custom property does.
+      spanTemplate.style.display = 'contents';
+      spanTemplate.style.fontFamily = 'var(--emoji-override-font-family, inherit)';
+      spanTemplate.style.lineHeight = 'var(--emoji-override-line-height, inherit)';
+    }
+
+    // A copy is several times cheaper than setting the class and the styles on a new element.
+    const span = cloneNode.call(spanTemplate, false);
     span.textContent = text;
     return span;
   }
@@ -245,23 +264,18 @@
     // seen, and the pieces show the old text.
     if (wrappedTexts.has(node)) discard(node);
 
-    const pieces = [document.createTextNode('')];
-    let plainText = '';
-    let found = false;
+    // Text and emoji in turn, starting and ending with text that may be empty.
+    const parts = splitAtEmoji(text);
+    if (!parts) return null;
 
-    for (const cluster of splitGraphemes(text)) {
-      if (isEmojiCluster(cluster)) {
-        if (plainText) pieces.push(document.createTextNode(plainText));
-        plainText = '';
-        pieces.push(createEmojiSpan(cluster));
-        found = true;
-      } else {
-        plainText += cluster;
+    const pieces = [document.createTextNode('')];
+    for (let index = 0; index < parts.length; index += 1) {
+      if (index % 2) {
+        pieces.push(createEmojiSpan(parts[index]));
+      } else if (parts[index]) {
+        pieces.push(document.createTextNode(parts[index]));
       }
     }
-
-    if (!found) return null;
-    if (plainText) pieces.push(document.createTextNode(plainText));
 
     const fragment = document.createDocumentFragment();
     for (const piece of pieces) {
@@ -272,6 +286,7 @@
     insertBefore.call(parent, fragment, node.nextSibling);
     node.data = '';
     wrappedTexts.set(node, { pieces, text });
+    wrappedBefore = true;
 
     const last = pieces[pieces.length - 1];
     return last.firstChild || last;
@@ -468,17 +483,36 @@
 
     if (!localNameOf.call(element).includes('-') || namespaceOf.call(element) !== HTML_NAMESPACE) return;
 
+    // Its next look is due later. Asking chrome.dom is the dear part, so a walk that comes by
+    // in the meantime does not ask again.
+    if (waitingHosts.has(element)) return;
+
     const closed = closedShadowRootOf(element);
     if (closed) {
       adoptShadowRoot(closed);
-    } else if (!lateHosts.has(element)) {
-      lateHosts.set(element, 0);
+    } else {
+      waitingHosts.add(element);
+      checkHostAt(element, 1);
       scheduleHostCheck();
     }
   }
 
+  // Books the next look at a host, for when it will have been known for `age` ticks. It is
+  // looked at when it has been known for 1, 2, 4, ... ticks, so the look before this one was at
+  // half that age. A page can have thousands of such elements: each is only touched when its
+  // look is due, not on every tick.
+  function checkHostAt(host, age) {
+    const due = hostTick + (age === 1 ? 1 : age / 2);
+    let hosts = hostChecks.get(due);
+    if (!hosts) {
+      hosts = [];
+      hostChecks.set(due, hosts);
+    }
+    hosts.push(host, age);
+  }
+
   function scheduleHostCheck() {
-    if (hostCheckTimer || !lateHosts.size) return;
+    if (hostCheckTimer || !hostChecks.size) return;
     hostCheckTimer = window.setTimeout(checkLateHosts, HOST_CHECK_MS);
   }
 
@@ -486,18 +520,21 @@
     hostCheckTimer = null;
     if (!isActive()) return;
 
-    for (const [host, ticks] of lateHosts) {
-      const now = ticks + 1;
-      const isPowerOfTwo = (now & (now - 1)) === 0;
-      const root = host.isConnected && isPowerOfTwo
-        ? openShadowRootOf.call(host) || closedShadowRootOf(host)
-        : null;
+    hostTick += 1;
+    const hosts = hostChecks.get(hostTick) || [];
+    hostChecks.delete(hostTick);
+
+    for (let index = 0; index < hosts.length; index += 2) {
+      const host = hosts[index];
+      const age = hosts[index + 1];
+      const root = host.isConnected ? openShadowRootOf.call(host) || closedShadowRootOf(host) : null;
 
       if (root) adoptShadowRoot(root);
-      if (root || !host.isConnected || now >= HOST_CHECK_TICKS) {
-        lateHosts.delete(host);
+      if (root || !host.isConnected || age >= HOST_CHECK_TICKS) {
+        // Forgotten. If it comes back into the document, the walk that finds it starts anew.
+        waitingHosts.delete(host);
       } else {
-        lateHosts.set(host, now);
+        checkHostAt(host, age * 2);
       }
     }
 
@@ -618,6 +655,9 @@
             walkQueue = Array.from(pendingRoots);
             walkIndex = 0;
             pendingRoots.clear();
+            // From here on these walks may have begun, and a walk that has begun does not meet
+            // what is added behind the place it has reached.
+            covered.clear();
           }
 
           walk = beginWalk(walkQueue[walkIndex]);
@@ -639,6 +679,7 @@
 
   function forgetWalks() {
     pendingRoots.clear();
+    covered.clear();
     walkQueue = [];
     walkIndex = 0;
     currentWalk = null;
@@ -750,7 +791,7 @@
     if (!isActive()) return;
 
     const written = new Map(); // text node of the page -> its text before these changes
-    const added = new Set();
+    const added = new Map(); // node -> the parent the page put it into, the last time
     const removed = new Map(); // node -> the parent the page took it from, the first time
     const crowded = new Set(); // anchors that got something put right behind them
     const disturbed = new Set(); // anchors with pieces the page removed or moved
@@ -761,6 +802,8 @@
     // that a framework is going to take over.
     const parsing = !heldBefore && document.readyState === 'loading';
     let serverRendered = false;
+    // Nothing was wrapped before these changes, so none of them can have touched a node of ours.
+    const nothingOfOurs = !wrappedBefore;
 
     for (const record of records) {
       if (record.type === 'characterData') {
@@ -778,18 +821,28 @@
         continue;
       }
 
-      for (const node of record.removedNodes) {
-        if (!removed.has(node)) removed.set(node, record.target);
-        const anchor = anchorOf.get(node);
-        if (anchor) disturbed.add(anchor);
+      // The two lists are gone through by index: on a page that adds tens of thousands of
+      // nodes, an iterator for each of them takes longer than the rest of this loop.
+      if (!nothingOfOurs) {
+        const { removedNodes } = record;
+        for (let index = 0; index < removedNodes.length; index += 1) {
+          const node = removedNodes[index];
+          if (!removed.has(node)) removed.set(node, record.target);
+          const anchor = anchorOf.get(node);
+          if (anchor) disturbed.add(anchor);
+        }
       }
 
-      if (record.addedNodes.length) {
-        for (const node of record.addedNodes) {
-          added.add(node);
+      const { addedNodes } = record;
+      if (addedNodes.length) {
+        for (let index = 0; index < addedNodes.length; index += 1) {
+          const node = addedNodes[index];
+          // A node that is put somewhere a second time is where it was put last.
+          added.set(node, record.target);
           if (parsing && !serverRendered && hydration.signOn(node)) serverRendered = true;
         }
-        if (wrappedTexts.has(record.previousSibling)) crowded.add(record.previousSibling);
+
+        if (!nothingOfOurs && wrappedTexts.has(record.previousSibling)) crowded.add(record.previousSibling);
       }
     }
 
@@ -840,9 +893,21 @@
         if (!disturbed.has(anchor)) follow(anchor);
       }
 
-      for (const node of added) {
+      // In the order they were first added. A node mostly comes after the node it was put
+      // into; where it does not, it gets a walk of its own, which is one too many and no harm.
+      for (const [node, parent] of added) {
+        if (anchorOf.has(node)) continue;
+
+        // A text without emoji needs no walk. If the page writes emoji into it later, that is
+        // seen as a write.
         const type = nodeTypeOf.call(node);
-        if ((type === Node.TEXT_NODE || type === Node.ELEMENT_NODE) && !anchorOf.has(node)) {
+        if (type !== Node.ELEMENT_NODE && !(type === Node.TEXT_NODE && hasEmojiCandidate(node.data))) continue;
+
+        if (pendingRoots.has(parent) || covered.has(parent)) {
+          covered.add(node);
+        } else {
+          // Moved out of a node that waits, perhaps: then it no longer goes with that node.
+          covered.delete(node);
           scheduleWalk(node);
         }
       }
@@ -961,7 +1026,9 @@
     }
 
     pendingWraps.clear();
-    lateHosts.clear();
+    hostChecks.clear();
+    waitingHosts = new WeakSet();
+    hostTick = 0;
     forgetWalks();
     scheduled = false;
 

@@ -38,6 +38,50 @@ describe('shadow roots that arrive late', skipWithoutChrome, () => {
     await page.close();
   });
 
+  test('a custom element that waits for a shadow root is asked for it when its turn comes, not by every walk', async () => {
+    // Closed shadow roots are asked for through an extension API. This stands in for it, and
+    // notes every question.
+    const init = `(() => {
+      const roots = new WeakMap();
+      window.__closedRoots = { roots, asked: 0 };
+      window.chrome.dom = {
+        openOrClosedShadowRoot(element) {
+          window.__closedRoots.asked += 1;
+          return roots.get(element) || element.shadowRoot;
+        }
+      };
+    })();`;
+    const page = await browser.open({ init, body: '<div id="box"><x-wait id="wait"></x-wait></div>' });
+
+    const result = await page.evaluate(async (emoji) => {
+      await __t.settle();
+      const box = document.getElementById('box');
+      const host = document.getElementById('wait');
+
+      // Twenty walks that come by the element while it waits.
+      for (let round = 0; round < 20; round += 1) {
+        document.body.appendChild(box);
+        await __t.settle();
+      }
+      const asked = window.__closedRoots.asked;
+
+      const root = host.attachShadow({ mode: 'closed' });
+      root.innerHTML = `<p>closed ${emoji}</p>`;
+      window.__closedRoots.roots.set(host, root);
+
+      // It is looked at 250, 500, 1000, 2000 and 4000 ms after it was first seen.
+      const deadline = performance.now() + 4500;
+      while (!__t.count(root) && performance.now() < deadline) await __t.sleep(100);
+      return { asked, found: __t.count(root) };
+    }, E.grin);
+
+    // Once by the first walk, and once for each turn that has come since: eight at the most.
+    assert.ok(result.asked >= 2 && result.asked <= 9, `asked ${result.asked} times`);
+    assert.equal(result.found, 1);
+    assert.deepEqual(page.errors, []);
+    await page.close();
+  });
+
   test('an ordinary element that gets a shadow root while the page loads is found after loading', async () => {
     const page = await browser.open({
       body: `<div id="host"></div><img src="/delay/900" alt="">
