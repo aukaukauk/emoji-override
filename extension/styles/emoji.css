@@ -4,13 +4,49 @@
 }
 
 /*
+   The same font once more for each system whose own emoji are smaller. At a given font size the
+   pictures of Noto Color Emoji are larger than those of Apple Color Emoji and of Windows 11, and
+   a page should not show larger emoji for having this extension. `size-adjust` scales the glyphs
+   of that one face and leaves fallback fonts and the font size of the element alone.
+
+   The factors make the picture of an emoji as large as the one it replaces. They are the median
+   over some 280 emoji, drawn on a canvas in both fonts: 87.6% on macOS, 92.2% on Windows 11. The
+   room an emoji takes cannot be made equal at the same time: Noto has more space around its
+   pictures than Apple's font and less than Windows'.
+
+   Only the face a document uses is loaded.
+*/
+@font-face {
+  font-family: 'EmojiOverrideNotoMac';
+  src: url('chrome-extension://__MSG_@@extension_id__/fonts/NotoColorEmoji.ttf');
+  size-adjust: 87.5%;
+}
+
+@font-face {
+  font-family: 'EmojiOverrideNotoWindows';
+  src: url('chrome-extension://__MSG_@@extension_id__/fonts/NotoColorEmoji.ttf');
+  size-adjust: 92.5%;
+}
+
+/*
    Keep wrapped spans inert when the extension is disabled. The inline
    var() on generated spans also lets open Shadow DOM content use the same
    enable/disable switch when the custom property is inherited.
+
+   The value of the attribute names the system whose emoji are replaced (see toggle.js). It is
+   empty where Noto is drawn at its own size.
 */
 html[data-noto-emoji-enabled] {
   --emoji-override-font-family: 'EmojiOverrideNoto', system-ui, sans-serif;
   --emoji-override-line-height: 1;
+}
+
+html[data-noto-emoji-enabled='mac'] {
+  --emoji-override-font-family: 'EmojiOverrideNotoMac', system-ui, sans-serif;
+}
+
+html[data-noto-emoji-enabled='windows'] {
+  --emoji-override-font-family: 'EmojiOverrideNotoWindows', system-ui, sans-serif;
 }
 
 /*

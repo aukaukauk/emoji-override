@@ -137,8 +137,12 @@ export function useBrowser() {
   });
 
   after(async () => {
-    if (browser.chrome) await browser.chrome.close();
-    if (browser.server) await browser.server.close();
+    try {
+      if (browser.chrome) await browser.chrome.close();
+    } finally {
+      // Left open, the server would keep the test file's process from ending.
+      if (browser.server) await browser.server.close();
+    }
   });
 
   // Opens a test document and returns the page. Unless `url` is given, the document is built

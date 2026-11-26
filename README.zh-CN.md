@@ -16,6 +16,7 @@ Noto Emoji Override 是一个轻量级 Chrome 扩展，用于在网页中优先�
 - 页面自己的文本节点保持在原位，因此 React、Vue、Preact、Lit、Angular 等会继续使用这些节点的脚本可以照常工作。
 - 在服务端渲染的页面上，会等页面框架接管标记之后才改动文字，让框架看到的页面和服务器发来的一致。
 - 使用 `Intl.Segmenter` 保持常见 emoji 序列完整，包括旗帜、肤色、keycap 和 ZWJ 序列。
+- 按系统 emoji 的大小显示：同样的字号下 Noto 的图形比 macOS 和 Windows 11 自带的 emoji 大，扩展在这两个系统上会把它缩小到和原来的一样大。
 - 仅在扩展启用时使用 `MutationObserver` 处理动态页面更新，包括脚本原地改写的文本。
 - 支持 open 和 closed 的 Shadow DOM root，包括元素出现后不久才挂载的 root。
 - 避免改写 `input`、`textarea`、`select`、`contenteditable`、`pre`、`code`、`kbd`、`samp` 等编辑或代码区域，以及 Monaco 和 Ace 代码编辑器的内部。
@@ -80,6 +81,7 @@ Noto Emoji Override 是一个轻量级 Chrome 扩展，用于在网页中优先�
 - 框架（`<iframe>`）里的内容不处理：扩展只在标签页的顶层文档里运行。
 - 用 `cloneNode` 复制已包裹的内容时，包裹元素和被清空的文本节点会一起被复制，而扩展并不认识这份副本。之后如果脚本按位置改写副本里的文本节点，新文字会和旧文字同时显示。
 - 页面的 `line-height` 保持 `normal` 时，开着扩展后带 emoji 的行可能比关闭时矮几个像素：系统的 emoji 字体会把这样的行撑高，而包裹元素不让内置字体这样做。
+- emoji 的大小是按图形对齐的：图形和系统 emoji 一样大，但它占的宽度仍会差几个百分点，因为各家字体在图形四周留的空白不同。Windows 10 的系统 emoji 按公开的字体数据和 Noto 差不多大，不做缩放，这一点没有在真机上量过。
 - Chrome 自带的网页翻译会把每个包裹元素当作句子的断点，所以中间带 emoji 的句子会被分段翻译。文字和 emoji 不会丢失，恢复显示原文也正常。
 - 如果页面使用特殊的自定义文本渲染，扩展可能无法影响这些内容。
 

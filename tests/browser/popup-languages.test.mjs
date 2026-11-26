@@ -162,6 +162,72 @@ describe('popup in every language', skipWithoutChrome, () => {
     });
   }
 
+  // The fonts of another system. With those of Windows the product's name is about a tenth wider
+  // than with those of macOS, and a machine only ever shows its own. Here every text is drawn
+  // larger, by as much as it takes for the name to be 205 px wide, which is wider than on
+  // either. Only the letters grow: the popup and the spaces in it stay as they are.
+  const WIDE_NAME = 205;
+  const widerFonts = `document.addEventListener('DOMContentLoaded', () => {
+    const style = document.createElement('style');
+    document.head.appendChild(style);
+    const widthOfName = () => {
+      const range = document.createRange();
+      range.selectNodeContents(document.getElementById('popupHeading'));
+      return range.getBoundingClientRect().width;
+    };
+    const natural = widthOfName();
+    style.textContent = '* { font-size-adjust: 0.6 }';
+    const adjusted = widthOfName();
+    // The width follows the value in proportion. A browser without the property leaves it.
+    style.textContent = adjusted > natural + 1 && natural < ${WIDE_NAME}
+      ? '* { font-size-adjust: ' + (0.6 * ${WIDE_NAME} / adjusted) + ' }'
+      : '';
+    window.__nameWidth = { natural, wide: widthOfName() };
+  });`;
+
+  test('every language keeps its room when the fonts are wider than those of this machine', async () => {
+    const wrong = [];
+    let widths = null;
+
+    for (const locale of locales) {
+      const messages = read(locale);
+      const longerError = [messages.errorLoad.message, messages.errorSave.message].sort((a, b) => b.length - a.length)[0];
+      const states = {};
+
+      const onSite = await browser.open({
+        url: `${browser.server.origin}/extension/popup/popup.html`,
+        stub: { tab: { id: 1, url: `https://${HOST}/page` }, messages },
+        init: widerFonts
+      });
+      states.on = await onSite.evaluate(look, longerError);
+      await onSite.evaluate(click, 'toggleBtn');
+      await onSite.evaluate(click, 'siteBtn');
+      states.off = await onSite.evaluate(look, longerError);
+      widths ||= await onSite.evaluate(() => window.__nameWidth);
+      await onSite.close();
+
+      const elsewhere = await browser.open({
+        url: `${browser.server.origin}/extension/popup/popup.html`,
+        stub: { tab: { id: 1, url: 'chrome://extensions/' }, messages },
+        init: widerFonts
+      });
+      states.other = await elsewhere.evaluate(look, longerError);
+      await elsewhere.close();
+
+      for (const [state, seen] of Object.entries(states)) {
+        const problems = [];
+        if (seen.nameLines !== 1) problems.push(`the name takes ${seen.nameLines} lines`);
+        if (seen.outside.length) problems.push(`outside the popup: ${seen.outside.join(', ')}`);
+        if (seen.cut.length) problems.push(`cut off: ${seen.cut.join(', ')}`);
+        if (seen.brokenWords.length) problems.push(`a word broken in: ${seen.brokenWords.join(', ')}`);
+        if (seen.height > TALLEST_POPUP) problems.push(`${seen.height}px tall`);
+        if (problems.length) wrong.push(`${locale} [${state}]: ${problems.join('; ')}`);
+      }
+    }
+
+    assert.deepEqual(wrong, [], `with the name ${Math.round(widths.wide)}px wide instead of ${Math.round(widths.natural)}px`);
+  });
+
   // What a translation or a font may yet bring: texts twice as long as the English ones, each
   // with a word that no line has room for.
   test('texts that are much longer, with words longer than a line, stay inside the popup', async () => {

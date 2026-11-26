@@ -161,7 +161,18 @@ export async function launchChrome() {
         child.kill();
         await exited;
       }
-      rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      // Chrome's helper processes go on writing to the profile for a moment after the browser
+      // itself has gone, and removing the folder meanwhile fails with ENOTEMPTY. A folder that
+      // is still there in the end is left behind: it is a temporary one, and no reason for a
+      // test to fail.
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        try {
+          rmSync(profile, { recursive: true, force: true });
+          return;
+        } catch {
+          await new Promise((resolve) => setTimeout(resolve, 150));
+        }
+      }
     }
   };
 }
