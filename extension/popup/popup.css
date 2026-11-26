@@ -42,9 +42,20 @@ body {
   padding: 16px;
 }
 
+/*
+   The product's name comes first: its column is at least as wide as the name on one line, and
+   the badge gets what is left, up to its own limit. How wide the name is depends on the fonts
+   of the system. With those of Windows it is wider than with those of macOS, and where the
+   badge came first the name was pushed onto two lines in a dozen languages.
+
+   Nothing but the name may set that width. A word in the line above the name, in the badge or
+   in the text below that is too long for its line is broken wherever it has to be, instead of
+   widening the column or leaving the popup.
+*/
 .popup-header {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(min-content, 1fr) auto;
+  overflow-wrap: anywhere;
   align-items: start;
   column-gap: 12px;
 }
@@ -73,6 +84,7 @@ p {
 h1 {
   font-size: 18px;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 h2 {
@@ -97,7 +109,7 @@ h2 {
 
 /*
    In some languages the status is twice as long as in English. The badge then takes two lines,
-   so that the product's name next to it keeps the room it needs for one.
+   or three where the name leaves it little room.
 */
 .status-badge {
   flex: none;
@@ -120,7 +132,9 @@ h2 {
 
 /*
    The button's column is as wide as the label, up to 128px, where the label wraps. Only a word
-   that is longer than that makes it wider, up to the button's own limit.
+   that is longer than that makes it wider, up to the button's own limit. That limit leaves room
+   for the longest single words of the translations in fonts wider than those of macOS: a word
+   of Greek, Tamil or Malayalam was broken in two with the fonts of Windows.
 */
 .panel {
   display: grid;
@@ -154,7 +168,7 @@ h2 {
 
 button {
   min-height: 34px;
-  max-width: 152px;
+  max-width: 196px;
   padding: 7px 11px;
   border: 1px solid var(--border);
   border-radius: 7px;
