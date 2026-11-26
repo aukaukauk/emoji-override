@@ -58,38 +58,54 @@ describe('emoji replacement', skipWithoutChrome, () => {
       return { shadowAtFirst, target: __t.count('#target'), shadowLater: __t.count(root), closed: __t.count(window.closedRoot) };
     }, E.party);
 
-    // Closed shadow roots are a documented limitation.
+    // Closed shadow roots are reached through an extension API, which a page script does not
+    // have. The test with the installed extension covers them.
     assert.deepEqual(result, { shadowAtFirst: 1, target: 2, shadowLater: 2, closed: 0 });
     assert.deepEqual(page.errors, []);
     await page.close();
   });
 
-  test('follows the global switch without a reload', async () => {
-    const page = await browser.open({ body: `<p id="a">first ${E.grin}</p>` });
+  test('follows the global switch without a reload, and hands the text back when off', async () => {
+    const page = await browser.open({ body: `<p id="a">first ${E.grin} and ${E.rocket}!</p>` });
 
     const result = await page.evaluate(async (emoji) => {
+      const paragraph = document.getElementById('a');
+      const own = paragraph.firstChild;
+      const text = paragraph.textContent;
+      const look = () => ({
+        marker: __t.marker(),
+        active: __t.active(),
+        wrapped: __t.count(paragraph),
+        nodes: paragraph.childNodes.length,
+        ownNodeFirst: paragraph.firstChild === own,
+        ownNodeHoldsText: own.data === text,
+        text: paragraph.textContent === text
+      });
+
       await __t.settle();
-      const span = document.querySelector('.noto-emoji-wrapped');
-      const state = () => ({ marker: __t.marker(), active: __t.active(), font: getComputedStyle(span).fontFamily });
-      const on = state();
+      const on = look();
+      const font = getComputedStyle(document.querySelector('.noto-emoji-wrapped')).fontFamily;
 
       await chrome.storage.sync.set({ enabled: false });
       await __t.settle();
       document.body.insertAdjacentHTML('beforeend', `<p id="off">added while off ${emoji}</p>`);
       await __t.settle();
-      const off = { ...state(), wrappedWhileOff: __t.count('#off') };
+      const off = { ...look(), addedWhileOff: __t.count('#off') };
 
       await chrome.storage.sync.set({ enabled: true });
       await __t.settle();
-      return { on, off, back: { ...state(), wrapped: __t.count('#off') } };
+      return { font, on, off, back: { ...look(), addedWhileOff: __t.count('#off') } };
     }, E.party);
 
-    assert.equal(result.on.marker, true);
-    assert.match(result.on.font, /EmojiOverrideNoto/);
-    assert.deepEqual([result.off.marker, result.off.active, result.off.wrappedWhileOff], [false, false, 0]);
-    assert.doesNotMatch(result.off.font, /EmojiOverrideNoto/, 'wrapped spans fall back to the page font');
-    assert.deepEqual([result.back.marker, result.back.active, result.back.wrapped], [true, true, 1]);
-    assert.match(result.back.font, /EmojiOverrideNoto/);
+    const wrapped = { wrapped: 2, nodes: 7, ownNodeFirst: true, ownNodeHoldsText: false, text: true };
+    assert.match(result.font, /EmojiOverrideNoto/);
+    assert.deepEqual(result.on, { marker: true, active: true, ...wrapped });
+    // Off means that the document is as the page made it: one text node, holding the text.
+    assert.deepEqual(result.off, {
+      marker: false, active: false, wrapped: 0, nodes: 1, ownNodeFirst: true, ownNodeHoldsText: true, text: true, addedWhileOff: 0
+    });
+    assert.deepEqual(result.back, { marker: true, active: true, ...wrapped, addedWhileOff: 1 });
+    assert.deepEqual(page.errors, []);
     await page.close();
   });
 

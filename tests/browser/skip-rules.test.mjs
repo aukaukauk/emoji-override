@@ -139,6 +139,50 @@ describe('places that must be left alone', skipWithoutChrome, () => {
     await page.close();
   });
 
+  test('text written in place inside such places is left alone as well', async () => {
+    const page = await browser.open({
+      body: `<pre id="pre">code</pre>
+<div id="editor" contenteditable="true"><p>typed</p></div>
+<div class="monaco-editor"><div class="view-line"><span id="monaco">let a</span></div></div>
+<svg width="200" height="30"><text id="svg" x="0" y="20">label</text></svg>
+<textarea id="area">field</textarea>
+<style id="style">p{color:inherit}</style>
+<p id="plain">plain</p>
+<p id="comment"><!--note--></p>`
+    });
+
+    const result = await page.evaluate(async (emoji) => {
+      await __t.settle();
+      const ids = ['pre', 'editor', 'monaco', 'svg', 'area', 'style', 'plain'];
+      const nodes = ids.map((id) => {
+        const walker = document.createTreeWalker(document.getElementById(id), NodeFilter.SHOW_TEXT);
+        return walker.nextNode();
+      });
+      const comment = document.getElementById('comment').firstChild;
+
+      // First a longer text, then a different one: both ways of changing a text node.
+      for (const node of nodes) node.appendData(` ${emoji}`);
+      comment.data = `note ${emoji}`;
+      await __t.sleep(window.__notoEmojiOverride.habits.WAIT_MS.later + 200);
+      const grown = ids.map((id) => __t.count(`#${id}`));
+
+      // Two different texts in a row: after the first, a text that had been growing is left
+      // alone, because the page might be appending. The second shows that it is not.
+      for (const text of [`other ${emoji} text`, `another ${emoji} text`]) {
+        for (const node of nodes) node.nodeValue = text;
+        comment.data = text;
+        await __t.sleep(0);
+      }
+      await __t.settle();
+      return { grown, replaced: ids.map((id) => __t.count(`#${id}`)), commentWrapped: __t.count('#comment') };
+    }, E.grin);
+
+    // Only the ordinary paragraph, last in the list, is wrapped.
+    assert.deepEqual(result, { grown: [0, 0, 0, 0, 0, 0, 1], replaced: [0, 0, 0, 0, 0, 0, 1], commentWrapped: 0 });
+    assert.deepEqual(page.errors, []);
+    await page.close();
+  });
+
   test('XML documents get working wrappers instead of an exception', async () => {
     const page = await browser.chrome.newPage();
     await page.addInitScript(chromeStub());

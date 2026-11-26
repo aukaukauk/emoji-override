@@ -35,12 +35,26 @@ function readInside(root, relativePath) {
 export async function startServer({ port = 0 } = {}) {
   const pages = new Map();
   const manifest = JSON.parse(readFileSync(join(extensionDir, 'manifest.json'), 'utf8'));
-  const [contentScripts] = manifest.content_scripts;
+  // A script that the manifest puts into the page's own world is in place before the others
+  // ask it anything, so it comes first here as well.
+  const contentScripts = [...manifest.content_scripts].sort((a, b) => Number(b.world === 'MAIN') - Number(a.world === 'MAIN'));
+  const styles = contentScripts.flatMap((entry) => entry.css ?? []);
+  const scripts = contentScripts.flatMap((entry) => entry.js ?? []);
 
   const server = http.createServer((request, response) => {
     const path = decodeURIComponent(new URL(request.url, 'http://127.0.0.1').pathname);
     let type = TYPES[extname(path)] || 'application/octet-stream';
     let body = null;
+
+    // /delay/<ms> answers late with nothing. As an image source it holds back the load event.
+    const delay = /^\/delay\/(\d+)$/.exec(path);
+    if (delay) {
+      setTimeout(() => {
+        response.writeHead(204);
+        response.end();
+      }, Number(delay[1]));
+      return;
+    }
 
     if (pages.has(path)) {
       ({ body, type } = pages.get(path));
@@ -69,8 +83,8 @@ export async function startServer({ port = 0 } = {}) {
 
   // Tags that load the content scripts and their stylesheet as ordinary page resources, in the
   // order the manifest lists them.
-  const extensionTags = contentScripts.css.map((file) => `<link rel="stylesheet" href="/extension/${file}"/>`).join('')
-    + contentScripts.js.map((file) => `<script src="/extension/${file}"></script>`).join('');
+  const extensionTags = styles.map((file) => `<link rel="stylesheet" href="/extension/${file}"/>`).join('')
+    + scripts.map((file) => `<script src="/extension/${file}"></script>`).join('');
 
   function register(body, type) {
     const path = `/page/${pages.size + 1}`;

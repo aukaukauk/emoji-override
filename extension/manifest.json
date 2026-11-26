@@ -2,8 +2,8 @@
     "manifest_version": 3,
     "name": "__MSG_appName__",
     "description": "__MSG_appDesc__",
-    "version": "1.1.2",
-    "minimum_chrome_version": "98",
+    "version": "1.2.0",
+    "minimum_chrome_version": "111",
     "permissions": [
         "storage",
         "activeTab"
@@ -26,12 +26,24 @@
                 "scripts/settings.js",
                 "scripts/toggle.js",
                 "scripts/emoji_detect.js",
+                "scripts/write_habits.js",
+                "scripts/hydration.js",
                 "scripts/emoji_replacer.js"
             ],
             "css": [
                 "styles/emoji.css"
             ],
             "run_at": "document_start"
+        },
+        {
+            "matches": [
+                "\u003call_urls\u003e"
+            ],
+            "js": [
+                "scripts/page_probe.js"
+            ],
+            "run_at": "document_start",
+            "world": "MAIN"
         }
     ],
     "web_accessible_resources": [

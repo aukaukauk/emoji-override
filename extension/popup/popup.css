@@ -25,6 +25,13 @@ body {
   background: var(--popup-bg);
   color: var(--text-primary);
   font: 14px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  /* A word that is longer than its line, in any translation, breaks rather than running out. */
+  overflow-wrap: break-word;
+}
+
+/* Korean is broken between words. By default the browser also breaks inside them. */
+:root:lang(ko) {
+  word-break: keep-all;
 }
 
 .popup-shell {
@@ -39,7 +46,7 @@ body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
-  gap: 12px;
+  column-gap: 12px;
 }
 
 .eyebrow {
@@ -49,6 +56,12 @@ body {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+/* Spacing letters out tears apart the scripts whose letters join or carry marks. */
+:is(:lang(ar), :lang(fa), :lang(ur), :lang(he), :lang(am), :lang(hi), :lang(mr), :lang(bn), :lang(gu), :lang(kn),
+  :lang(ml), :lang(ta), :lang(te), :lang(th)) .eyebrow {
+  letter-spacing: normal;
 }
 
 h1,
@@ -76,21 +89,28 @@ h2 {
   font-size: 12px;
 }
 
+/* Under the name and the badge, over the whole width: a long badge leaves it its room. */
 .subtitle {
+  grid-column: 1 / -1;
   margin-top: 4px;
 }
 
+/*
+   In some languages the status is twice as long as in English. The badge then takes two lines,
+   so that the product's name next to it keeps the room it needs for one.
+*/
 .status-badge {
   flex: none;
   min-width: 76px;
+  max-width: 150px;
   padding: 4px 8px;
-  border-radius: 999px;
+  border-radius: 13px;
   background: var(--muted-bg);
   color: var(--muted-text);
   font-size: 12px;
   font-weight: 700;
   text-align: center;
-  white-space: nowrap;
+  text-wrap: balance;
 }
 
 .status-badge.enabled {
@@ -98,9 +118,13 @@ h2 {
   color: var(--success-text);
 }
 
+/*
+   The button's column is as wide as the label, up to 128px, where the label wraps. Only a word
+   that is longer than that makes it wider, up to the button's own limit.
+*/
 .panel {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) fit-content(128px);
   align-items: center;
   gap: 14px;
   padding: 13px;
@@ -130,7 +154,7 @@ h2 {
 
 button {
   min-height: 34px;
-  max-width: 128px;
+  max-width: 152px;
   padding: 7px 11px;
   border: 1px solid var(--border);
   border-radius: 7px;
@@ -141,6 +165,7 @@ button {
   font-weight: 700;
   line-height: 1.2;
   text-align: center;
+  text-wrap: balance;
   transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
