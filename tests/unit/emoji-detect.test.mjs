@@ -2,7 +2,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadExtensionScript } from './support/load.mjs';
 
-const { splitGraphemes, hasEmojiCandidate, isEmojiCluster } = loadExtensionScript('scripts/emoji_detect.js').emoji;
+const { splitGraphemes, hasEmojiCandidate, isEmojiCluster, splitAtEmoji, isPlainCodeUnit } = loadExtensionScript('scripts/emoji_detect.js').emoji;
 
 const VS15 = '\u{FE0E}'; // asks for text presentation
 const VS16 = '\u{FE0F}'; // asks for emoji presentation
@@ -217,6 +217,140 @@ describe('splitGraphemes', () => {
   test('loses nothing', () => {
     const text = `Cafe\u{0301} \u{1F469}${ZWJ}\u{1F4BB} \u{0915}\u{094D}${ZWJ}\u{0937} \u{1F1E8}\u{1F1F3}\u{1F1EF} ok\r\n`;
     assert.equal(splitGraphemes(text).join(''), text);
+  });
+
+  test('sets up what it needs for the first text that is split, not before', () => {
+    const Real = Intl.Segmenter;
+    let made = 0;
+    Intl.Segmenter = class extends Real {
+      constructor(...options) {
+        super(...options);
+        made += 1;
+      }
+    };
+
+    try {
+      // The script once more, as a page loads it.
+      const fresh = loadExtensionScript('scripts/emoji_detect.js').emoji;
+      assert.equal(fresh.hasEmojiCandidate('no emoji in here'), false);
+      assert.equal(fresh.splitAtEmoji('no emoji in here'), null);
+      assert.equal(made, 0);
+
+      assert.deepEqual(fresh.splitAtEmoji('one \u{1F600}'), ['one ', '\u{1F600}', '']);
+      assert.deepEqual(fresh.splitGraphemes('two'), ['t', 'w', 'o']);
+      assert.equal(made, 1);
+    } finally {
+      Intl.Segmenter = Real;
+    }
+  });
+});
+
+describe('splitAtEmoji', () => {
+  // What the text is cut into when every cluster of it is looked at, one after the other.
+  function clusterByCluster(text) {
+    const parts = [''];
+    for (const cluster of splitGraphemes(text)) {
+      if (isEmojiCluster(cluster)) parts.push(cluster, '');
+      else parts[parts.length - 1] += cluster;
+    }
+    return parts.length > 1 ? parts : null;
+  }
+
+  test('gives the text and the emoji in turn', () => {
+    const grin = '\u{1F600}';
+    const thumbsUp = '\u{1F44D}\u{1F3FD}';
+    const family = `\u{1F468}${ZWJ}\u{1F469}${ZWJ}\u{1F467}`;
+    const one = `1${VS16}${KEYCAP}`;
+
+    assert.deepEqual(splitAtEmoji(`Hello ${grin} world`), ['Hello ', grin, ' world']);
+    assert.deepEqual(splitAtEmoji(grin), ['', grin, '']);
+    assert.deepEqual(splitAtEmoji(`${grin}${thumbsUp} ok ${family}`), ['', grin, '', thumbsUp, ' ok ', family, '']);
+    assert.deepEqual(splitAtEmoji(`step ${one}: go`), ['step ', one, ': go']);
+    assert.deepEqual(splitAtEmoji(`\u{4E2D}\u{6587}${grin}\u{6587}\u{5B57}`), ['\u{4E2D}\u{6587}', grin, '\u{6587}\u{5B57}']);
+  });
+
+  test('gives nothing for a text without emoji', () => {
+    assert.equal(splitAtEmoji(''), null);
+    assert.equal(splitAtEmoji('plain text, 100% #1 * 2'), null);
+    assert.equal(splitAtEmoji(`\u{2764} \u{2764}${VS15} \u{00A9} 2026`), null);
+    // Characters that may belong to an emoji, but do not make one here.
+    assert.equal(splitAtEmoji(`a${ZWJ}b ${VS16} 1${VS15}`), null);
+  });
+
+  test('loses nothing and changes nothing', () => {
+    const text = `Cafe\u{0301} \u{1F469}${ZWJ}\u{1F4BB} \u{0915}\u{094D}${ZWJ}\u{0937} \u{1F1E8}\u{1F1F3}\u{1F1EF} ok\r\n`;
+    assert.equal(splitAtEmoji(text).join(''), text);
+  });
+
+  test('finds the emoji of a long text without splitting all of it', () => {
+    const sentence = 'The quick brown fox jumps over the lazy dog. ';
+    const text = `${sentence.repeat(200)}\u{1F600}${sentence.repeat(200)}\u{1F389} end`;
+    const real = Intl.Segmenter.prototype.segment;
+    let split = 0;
+
+    Intl.Segmenter.prototype.segment = function segment(input) {
+      split += input.length;
+      return real.call(this, input);
+    };
+    try {
+      assert.deepEqual(splitAtEmoji(text), [sentence.repeat(200), '\u{1F600}', sentence.repeat(200), '\u{1F389}', ' end']);
+    } finally {
+      Intl.Segmenter.prototype.segment = real;
+    }
+
+    assert.ok(split > 0 && split < 20, `${split} of ${text.length} characters were split into clusters`);
+  });
+
+  test('only takes a boundary for granted between characters that never join their neighbours', () => {
+    const wrong = [];
+    for (let code = 0; code <= 0xFFFF; code++) {
+      if (!isPlainCodeUnit(code)) continue;
+
+      const character = String.fromCharCode(code);
+      // Next to itself, to a letter and to a Han character, and on either side of an emoji:
+      // always a cluster of its own.
+      const alone = [`${character}${character}`, `a${character}`, `${character}a`, `\u{4E00}${character}`, `${character}\u{4E00}`]
+        .every((pair) => splitGraphemes(pair).length === 2)
+        && splitGraphemes(`\u{1F600}${character}\u{1F600}`).length === 3;
+      if (!alone) wrong.push(character);
+    }
+
+    assertNone(wrong, 'join a neighbour');
+    assert.equal(isPlainCodeUnit(0x0A), false);
+    assert.equal(isPlainCodeUnit(0x0301), false);
+    assert.equal(isPlainCodeUnit(0xD83D), false);
+  });
+
+  test('agrees with going through the whole text cluster by cluster', () => {
+    const alphabet = [
+      'a', 'b', 'x', ' ', ' ', '1', '9', '#', '*', '.', '\n', '\r', '\t',
+      'e\u{0301}', '\u{0301}', ZWJ, VS16, VS15, KEYCAP,
+      '\u{1F600}', '\u{1F44D}', '\u{1F3FD}', '\u{1F1E8}', '\u{1F1F3}', '\u{1F468}', '\u{1F469}', '\u{1F3F4}',
+      '\u{2764}', '\u{2705}', '\u{231A}', '\u{00A9}', '\u{1FAE9}', '\u{E0067}', '\u{E007F}',
+      '\u{4E2D}', '\u{6587}', '\u{3042}', '\u{3099}', '\u{FF9E}', '\u{AC00}', '\u{1100}', '\u{1161}',
+      '\u{0915}', '\u{094D}', '\u{0937}', '\u{0600}', '\u{0E01}', '\u{0E33}', '\u{D83D}'
+    ];
+
+    // A fixed sequence, so that a failure can be repeated.
+    let seed = 20261125;
+    const next = (below) => {
+      seed = (Math.imul(seed, 1103515245) + 12345) & 0x7FFFFFFF;
+      return seed % below;
+    };
+
+    const wrong = [];
+    let withEmoji = 0;
+    for (let round = 0; round < 40000; round++) {
+      let text = '';
+      for (let length = 1 + next(16); length > 0; length--) text += alphabet[next(alphabet.length)];
+
+      const expected = clusterByCluster(text);
+      if (expected) withEmoji += 1;
+      if (JSON.stringify(splitAtEmoji(text)) !== JSON.stringify(expected)) wrong.push(text);
+    }
+
+    assertNone(wrong, 'are cut differently');
+    assert.ok(withEmoji > 20000, `only ${withEmoji} of the texts held an emoji`);
   });
 });
 
