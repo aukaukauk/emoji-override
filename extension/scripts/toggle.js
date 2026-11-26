@@ -25,9 +25,36 @@
   };
   shared.state = state;
 
+  // Whose emoji the page would show without this extension: 'mac', 'windows' for Windows 11 and
+  // later, or '' for every other system. The stylesheet draws Noto at the size of those emoji
+  // (see emoji.css); with '' it keeps its own size. Windows 10 is among the others on purpose:
+  // its emoji are larger than those of Windows 11, about as large as Noto's.
+  const WINDOWS_11 = 13; // the first platform version that is Windows 11
+
+  async function systemEmoji() {
+    const data = navigator.userAgentData;
+    const platform = (data && data.platform) || navigator.platform || '';
+    if (/mac/i.test(platform)) return 'mac';
+    if (!/win/i.test(platform)) return '';
+
+    try {
+      const { platformVersion } = await data.getHighEntropyValues(['platformVersion']);
+      return parseInt(platformVersion, 10) >= WINDOWS_11 ? 'windows' : '';
+    } catch {
+      // The version cannot be asked for. Windows 11 is the likely one by now.
+      return 'windows';
+    }
+  }
+
+  const emojiOfSystem = systemEmoji();
+  // The value the marker attribute has while replacement is on.
+  let markerValue = '';
+
   let markedRoot = null;
   let restoreTimes = [];
   let abandoned = false;
+
+  const wantedMarker = () => (state.active ? markerValue : null);
 
   function syncMarker() {
     const root = document.documentElement;
@@ -43,8 +70,10 @@
       markedRoot = root;
     }
 
-    if (!abandoned && root.hasAttribute(ENABLED_ATTRIBUTE) !== state.active) {
-      root.toggleAttribute(ENABLED_ATTRIBUTE, state.active);
+    const wanted = wantedMarker();
+    if (!abandoned && root.getAttribute(ENABLED_ATTRIBUTE) !== wanted) {
+      if (wanted === null) root.removeAttribute(ENABLED_ATTRIBUTE);
+      else root.setAttribute(ENABLED_ATTRIBUTE, wanted);
     }
   }
 
@@ -66,7 +95,7 @@
   function restoreMarker() {
     const root = document.documentElement;
     if (abandoned || !root) return;
-    if (root === markedRoot && root.hasAttribute(ENABLED_ATTRIBUTE) === state.active) return;
+    if (root === markedRoot && root.getAttribute(ENABLED_ATTRIBUTE) === wantedMarker()) return;
 
     const now = Date.now();
     restoreTimes = restoreTimes.filter((time) => now - time < RESTORE_WINDOW_MS);
@@ -86,7 +115,8 @@
 
   async function readState() {
     // A storage area that cannot be read counts as empty, which leaves replacement on.
-    const current = await settings.read({ tolerant: true });
+    const [current, system] = await Promise.all([settings.read({ tolerant: true }), emojiOfSystem]);
+    markerValue = system;
 
     // A settings change is a fresh start for a page that had been left alone.
     abandoned = false;

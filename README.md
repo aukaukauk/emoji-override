@@ -16,6 +16,7 @@ Its scope is intentionally narrow: emoji are wrapped and styled separately, whil
 - Leaves the page's own text nodes where they are, so scripts that keep using them, such as React, Vue, Preact, Lit and Angular, go on working.
 - On server-rendered pages, waits until the page's framework has taken over the markup before it changes any text, so that the framework finds the page as the server sent it.
 - Uses `Intl.Segmenter` to keep common emoji sequences together, including flags, skin tones, keycaps, and ZWJ sequences.
+- Draws emoji at the size of the ones they replace. At the same font size Noto's pictures are larger than the emoji of macOS and of Windows 11, so on those two systems the extension scales them down to match.
 - Handles dynamic page updates with `MutationObserver` only while the extension is active, including text that a script changes in place.
 - Works inside shadow roots, open and closed, including ones that are attached shortly after their element appeared.
 - Avoids DOM rewriting in editing-sensitive areas such as `input`, `textarea`, `select`, `contenteditable`, `pre`, `code`, `kbd`, and `samp`, and inside the Monaco and Ace code editors.
@@ -80,6 +81,7 @@ See `PRIVACY.md` for the full privacy policy.
 - Content inside frames is not handled: the extension runs in the top document of a tab only.
 - A copy of wrapped content made with `cloneNode` carries the wrappers and the emptied text node along, and nothing ties the copy to the extension. A script that then writes to a text node of the copy by its position shows the new text next to the old one.
 - Where a page leaves `line-height` at `normal`, a line with emoji can be several pixels lower with the extension on than off. The platform's emoji font stretches such a line, and the wrapper keeps the bundled font from doing the same.
+- Sizes are matched by the picture: an emoji's picture is as large as the one it replaces, but the room it takes can still differ by a few percent, because each font leaves a different amount of space around its pictures. By published measurements of its font, the emoji of Windows 10 are about as large as Noto's to begin with, so they are not scaled. That has not been measured on a machine.
 - Chrome's built-in page translation treats each wrapper as a break in the sentence, so a sentence with an emoji in the middle is translated in pieces. No text or emoji is lost, and showing the original again works.
 - If a page uses unusual custom text rendering, the extension may not affect that content.
 

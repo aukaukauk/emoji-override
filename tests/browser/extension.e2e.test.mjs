@@ -35,7 +35,8 @@ describe('the installed extension', skipWithoutChrome, () => {
         inProtectedPlaces: document.querySelectorAll(protectedSelector).length,
         withoutHtmlParent: spans.filter((span) => span.parentNode.namespaceURI !== 'http://www.w3.org/1999/xhtml').length,
         font: getComputedStyle(spans[0]).fontFamily,
-        fontStatus: [...document.fonts].filter((face) => face.family.includes('EmojiOverrideNoto')).map((face) => face.status),
+        // The font has a face for each size it is drawn at. A document loads the one it uses.
+        fontStatus: [...document.fonts].filter((face) => face.family.includes('EmojiOverrideNoto')).map((face) => face.status).sort(),
         pageSeesSharedState: typeof window.__notoEmojiOverride
       };
     }, PROTECTED);
@@ -45,7 +46,7 @@ describe('the installed extension', skipWithoutChrome, () => {
     assert.equal(initial.inProtectedPlaces, 0);
     assert.equal(initial.withoutHtmlParent, 0);
     assert.match(initial.font, /^"?EmojiOverrideNoto/);
-    assert.deepEqual(initial.fontStatus, ['loaded'], 'the font loads from the extension URL');
+    assert.deepEqual(initial.fontStatus, ['loaded', 'unloaded', 'unloaded'], 'the font loads from the extension URL, in one size');
     assert.equal(initial.pageSeesSharedState, 'undefined', 'the state object lives in the isolated world only');
 
     const isolated = await inExtension(() => ({
