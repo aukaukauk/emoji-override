@@ -4,6 +4,15 @@ import { after, before } from 'node:test';
 import { findChrome, launchChrome } from './chrome.mjs';
 import { startServer } from './server.mjs';
 
+// Without Chrome these tests are skipped, so that the rest can be run on a machine that has
+// none. Where they must run, on a CI machine (`CI`) or when `REQUIRE_CHROME` is set, a missing
+// Chrome stops the run instead: a release check that passes without having opened a page is
+// worse than one that fails.
+const mustRun = (name) => Boolean(process.env[name]) && process.env[name] !== '0' && process.env[name] !== 'false';
+if (!findChrome() && (mustRun('CI') || mustRun('REQUIRE_CHROME'))) {
+  throw new Error('Chrome was not found, and the browser tests may not be skipped here. Set CHROME_PATH to its executable.');
+}
+
 export const skipWithoutChrome = findChrome() ? {} : { skip: 'Chrome was not found (set CHROME_PATH)' };
 
 // Emoji used in tests, spelled with escapes so that the invisible joiners and variation

@@ -6,17 +6,21 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const CANDIDATES = [
-  process.env.CHROME_PATH,
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   '/usr/bin/google-chrome',
   '/usr/bin/google-chrome-stable',
   '/usr/bin/chromium',
   '/usr/bin/chromium-browser',
-  'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+  'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+  'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+  process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, 'Google', 'Chrome', 'Application', 'chrome.exe')
 ];
 
+// CHROME_PATH names the Chrome to use. With it set, no other is looked for: a path that is
+// wrong should not end in tests that ran in some other browser.
 export function findChrome() {
-  return CANDIDATES.find((candidate) => candidate && existsSync(candidate)) || null;
+  const candidates = process.env.CHROME_PATH ? [process.env.CHROME_PATH] : CANDIDATES;
+  return candidates.find((candidate) => candidate && existsSync(candidate)) || null;
 }
 
 export async function launchChrome() {
@@ -44,14 +48,16 @@ export async function launchChrome() {
   let closed = false;
   const pending = new Map();
   const sessions = new Map();
-  let buffer = '';
+  let buffer = Buffer.alloc(0);
 
   child.stdio[4].on('data', (chunk) => {
-    buffer += chunk.toString('utf8');
+    // Messages end with a zero byte. They are cut apart as bytes and decoded whole: a chunk can
+    // end in the middle of a character, such as an emoji of four bytes.
+    buffer = buffer.length ? Buffer.concat([buffer, chunk]) : chunk;
     let end;
-    while ((end = buffer.indexOf('\0')) >= 0) {
-      const message = JSON.parse(buffer.slice(0, end));
-      buffer = buffer.slice(end + 1);
+    while ((end = buffer.indexOf(0)) >= 0) {
+      const message = JSON.parse(buffer.toString('utf8', 0, end));
+      buffer = buffer.subarray(end + 1);
       if (message.id && pending.has(message.id)) {
         const { resolve, reject, method } = pending.get(message.id);
         pending.delete(message.id);

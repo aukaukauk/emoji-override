@@ -172,6 +172,15 @@ describe('the check before packaging', () => {
     });
   }
 
+  test('reads a path that starts with a slash from the root of the extension', () => {
+    const page = '<link rel="stylesheet" href="/popup/popup.css"><script src="/scripts/shared.js"></script>';
+    assert.equal(checkEntries(minimalEntries({ 'popup/popup.html': page, 'popup/popup.js': null })).version, '1.2.3');
+    assert.throws(
+      () => checkEntries(minimalEntries({ 'popup/popup.html': page, 'scripts/shared.js': null })),
+      /scripts\/shared\.js/
+    );
+  });
+
   test('stops when there is no manifest or no usable version', () => {
     assert.throws(() => checkEntries(minimalEntries({ 'manifest.json': null })), /manifest\.json is missing/);
     assert.throws(() => checkEntries(minimalEntries({ 'manifest.json': { ...minimalManifest, version: 'next' } })), /version/);
