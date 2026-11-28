@@ -135,10 +135,12 @@ describe('layout around wrapped emoji', skipWithoutChrome, () => {
         await __t.settle();
         await __t.fontsReady();
         const height = (id) => document.getElementById(id).getBoundingClientRect().height;
-        return { only: height('only'), first: height('first'), plain: height('plain'), wrapped: __t.wrapped().length };
+        return { only: height('only'), first: height('first'), plain: height('plain'), replaced: __t.count(document.body), held: __t.held().map((element) => element.id) };
       });
 
-      assert.equal(heights.wrapped, 2);
+      // The first paragraph gets the font as a whole, the second gets a wrapper.
+      assert.equal(heights.replaced, 2);
+      assert.deepEqual(heights.held, ['only']);
       assert.equal(heights.first, heights.plain);
       // In the quirks modes such a line is as tall as the emoji's own line-height (1em), not 0.
       assert.ok(heights.only >= 14 && heights.only <= heights.plain, `emoji-only line is ${heights.only}px`);

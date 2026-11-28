@@ -45,6 +45,10 @@
   const scriptsOf = prototypeGetter(Document.prototype, 'scripts');
   const nodeTypeOf = prototypeGetter(Node.prototype, 'nodeType');
   const parentNodeOf = prototypeGetter(Node.prototype, 'parentNode');
+  const readyStateOf = prototypeGetter(Document.prototype, 'readyState');
+  const createTreeWalker = Document.prototype.createTreeWalker;
+  const listen = EventTarget.prototype.addEventListener;
+  const dispatch = EventTarget.prototype.dispatchEvent;
   const matches = Element.prototype.matches;
   const queryIn = (root, selector) => (root === document ? Document.prototype : Element.prototype).querySelector.call(root, selector);
 
@@ -53,7 +57,7 @@
     : (callback) => window.setTimeout(callback, 50);
 
   function hasComment(root, wanted) {
-    const comments = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
+    const comments = createTreeWalker.call(document, root, NodeFilter.SHOW_COMMENT);
     while (comments.nextNode()) {
       if (wanted.has(comments.currentNode.data)) return true;
     }
@@ -89,8 +93,8 @@
   const noteScript = (event) => {
     if (event.target instanceof HTMLScriptElement) finished.add(event.target);
   };
-  document.addEventListener('load', noteScript, true);
-  document.addEventListener('error', noteScript, true);
+  listen.call(document, 'load', noteScript, true);
+  listen.call(document, 'error', noteScript, true);
 
   const SCRIPT_TYPE = /^(?:module|(?:text|application)\/(?:x-)?(?:java|ecma)script)$/i;
 
@@ -107,7 +111,7 @@
 
   // An event that comes back cancelled is a "yes" from page_probe.js.
   function asksPage(question) {
-    return !document.dispatchEvent(new Event(question, { cancelable: true }));
+    return !dispatch.call(document, new Event(question, { cancelable: true }));
   }
 
   // Calls `done` once the framework has taken the document over, as far as that can be told.
@@ -149,7 +153,7 @@
       const poll = () => {
         if (over) return;
 
-        const loaded = document.readyState === 'complete';
+        const loaded = readyStateOf.call(document) === 'complete';
         if (!loaded && !scripts.every((script) => finished.has(script) || !script.isConnected)) {
           window.setTimeout(poll, SCRIPT_POLL_MS);
         } else if (!loaded && scripts.length) {
@@ -182,7 +186,7 @@
 
       // Markup that is still arriving is still to be taken over, whatever has become of the
       // part that is there.
-      if (document.readyState === 'loading') {
+      if (readyStateOf.call(document) === 'loading') {
         if (now - startedAt > LOADING_LIMIT_MS) finish();
         else again();
         return;
@@ -192,7 +196,7 @@
         parsedAt = now;
         waitForScripts(0);
       }
-      if (!loadedAt && document.readyState === 'complete') loadedAt = now;
+      if (!loadedAt && readyStateOf.call(document) === 'complete') loadedAt = now;
 
       // Markup that still carries what its framework takes off has not been taken over. Once
       // that is gone, it has been.

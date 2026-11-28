@@ -1,6 +1,7 @@
 @font-face {
   font-family: 'EmojiOverrideNoto';
   src: url('chrome-extension://__MSG_@@extension_id__/fonts/NotoColorEmoji.ttf');
+  font-display: swap;
 }
 
 /*
@@ -14,17 +15,50 @@
    room an emoji takes cannot be made equal at the same time: Noto has more space around its
    pictures than Apple's font and less than Windows'.
 
-   Only the face a document uses is loaded.
+   Only the face a document uses is loaded. Until it is, the emoji keep the look they had
+   (`font-display: swap`) instead of disappearing for a moment.
 */
 @font-face {
   font-family: 'EmojiOverrideNotoMac';
   src: url('chrome-extension://__MSG_@@extension_id__/fonts/NotoColorEmoji.ttf');
+  font-display: swap;
   size-adjust: 87.5%;
 }
 
 @font-face {
   font-family: 'EmojiOverrideNotoWindows';
   src: url('chrome-extension://__MSG_@@extension_id__/fonts/NotoColorEmoji.ttf');
+  font-display: swap;
+  size-adjust: 92.5%;
+}
+
+/*
+   And each of the three once more, for elements that hold nothing but emoji and get the font
+   as a whole (see mark() in emoji_replacer.js). These faces leave out the space character. The
+   browser takes the measures of a line from the first font of the list that has a space, so
+   here from the system's font that follows, as it would for any text of the page, and a space
+   between two emoji is as wide as in that font.
+*/
+@font-face {
+  font-family: 'EmojiOverrideNotoOnly';
+  src: url('chrome-extension://__MSG_@@extension_id__/fonts/NotoColorEmoji.ttf');
+  font-display: swap;
+  unicode-range: U+0-1F, U+21-10FFFF;
+}
+
+@font-face {
+  font-family: 'EmojiOverrideNotoOnlyMac';
+  src: url('chrome-extension://__MSG_@@extension_id__/fonts/NotoColorEmoji.ttf');
+  font-display: swap;
+  unicode-range: U+0-1F, U+21-10FFFF;
+  size-adjust: 87.5%;
+}
+
+@font-face {
+  font-family: 'EmojiOverrideNotoOnlyWindows';
+  src: url('chrome-extension://__MSG_@@extension_id__/fonts/NotoColorEmoji.ttf');
+  font-display: swap;
+  unicode-range: U+0-1F, U+21-10FFFF;
   size-adjust: 92.5%;
 }
 
@@ -38,15 +72,26 @@
 */
 html[data-noto-emoji-enabled] {
   --emoji-override-font-family: 'EmojiOverrideNoto', system-ui, sans-serif;
+  --emoji-override-only-font-family: 'EmojiOverrideNotoOnly', system-ui, sans-serif;
   --emoji-override-line-height: 1;
 }
 
 html[data-noto-emoji-enabled='mac'] {
   --emoji-override-font-family: 'EmojiOverrideNotoMac', system-ui, sans-serif;
+  --emoji-override-only-font-family: 'EmojiOverrideNotoOnlyMac', system-ui, sans-serif;
 }
 
 html[data-noto-emoji-enabled='windows'] {
   --emoji-override-font-family: 'EmojiOverrideNotoWindows', system-ui, sans-serif;
+  --emoji-override-only-font-family: 'EmojiOverrideNotoOnlyWindows', system-ui, sans-serif;
+}
+
+/*
+   An element that holds nothing but emoji. The mark is only worth something while the
+   extension is on.
+*/
+html[data-noto-emoji-enabled] [data-noto-emoji-only] {
+  font-family: var(--emoji-override-only-font-family) !important;
 }
 
 /*

@@ -212,4 +212,31 @@ describe('pages that rework the document', skipWithoutChrome, () => {
     assert.deepEqual(page.errors, []);
     await page.close();
   });
+
+  test('elements named after members of the document, and a control named isContentEditable', async () => {
+    const names = ['documentElement', 'readyState', 'createTreeWalker', 'createElementNS', 'createTextNode', 'createDocumentFragment', 'addEventListener', 'dispatchEvent', 'getSelection'];
+    const page = await browser.open({
+      body: names.map((name) => `<img name="${name}" alt="">`).join('')
+        + `<form id="form"><input name="isContentEditable"><input name="firstChild"><input name="lastChild"><input name="setAttribute">in a form ${E.grin}</form>`
+        + `<form id="only"><input name="isContentEditable" hidden></form><p id="a">text ${E.grin}</p><p id="b">${E.grin}</p>`
+    });
+
+    const result = await page.evaluate(async (count) => {
+      await __t.settle();
+      const root = Object.getOwnPropertyDescriptor(Document.prototype, 'documentElement').get.call(document);
+      return {
+        shadowed: document.documentElement !== root && typeof document.createTreeWalker !== 'function',
+        marker: root.hasAttribute('data-noto-emoji-enabled'),
+        onImages: document.querySelectorAll('img[data-noto-emoji-enabled]').length,
+        form: __t.count('#form'),
+        a: __t.count('#a'),
+        b: __t.count('#b'),
+        images: document.querySelectorAll('img').length === count
+      };
+    }, names.length);
+
+    assert.deepEqual(result, { shadowed: true, marker: true, onImages: 0, form: 1, a: 1, b: 1, images: true });
+    assert.deepEqual(page.errors, []);
+    await page.close();
+  });
 });

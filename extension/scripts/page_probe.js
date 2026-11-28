@@ -21,6 +21,10 @@
   const bodyOf = getter(Document.prototype, 'body');
   const rootElementOf = getter(Document.prototype, 'documentElement');
   const parentOf = getter(Node.prototype, 'parentNode');
+  const nextOf = getter(Node.prototype, 'nextSibling');
+  const typeOf = getter(Node.prototype, 'nodeType');
+  const nameOf = getter(Element.prototype, 'localName');
+  const listen = EventTarget.prototype.addEventListener;
   const queryAll = Document.prototype.querySelectorAll;
   const createTreeWalker = Document.prototype.createTreeWalker;
   const clock = Date.now;
@@ -37,8 +41,13 @@
 
   // Has this React tree yet to take over what the server sent?
   function rootIsWaiting(container, key) {
-    const rootState = container[key].stateNode.current.memoizedState;
-    return Boolean(rootState && rootState.isDehydrated);
+    try {
+      const rootState = container[key].stateNode.current.memoizedState;
+      return Boolean(rootState && rootState.isDehydrated);
+    } catch {
+      // Not a root as React keeps them now. The others are still looked at.
+      return false;
+    }
   }
 
   // The comments that React's server leaves in what it renders: a space between two texts that
@@ -56,8 +65,9 @@
     let depth = 0;
     let content = false;
 
-    for (let node = open.nextSibling; node; node = node.nextSibling) {
-      const type = node.nodeType;
+    // A form among these nodes may have controls that are named like the members asked for.
+    for (let node = nextOf.call(open); node; node = nextOf.call(node)) {
+      const type = typeOf.call(node);
       if (type === 8) {
         if (node.data === '/$') {
           if (depth === 0) break;
@@ -65,7 +75,7 @@
         } else if (node.data === '$' || node.data === '$?' || node.data === '$!') {
           depth += 1;
         }
-      } else if (type === 1 ? !NOT_CONTENT.has(node.localName) : type === 3 && node.data.trim() !== '') {
+      } else if (type === 1 ? !NOT_CONTENT.has(nameOf.call(node)) : type === 3 && node.data.trim() !== '') {
         if (keyWith(node, '__reactFiber$')) return false;
         content = true;
       }
@@ -157,6 +167,6 @@
     if (state[question]) event.preventDefault();
   }
 
-  document.addEventListener(TAKING_OVER, (event) => answer(event, 'waiting'), true);
-  document.addEventListener(TAKEN_OVER, (event) => answer(event, 'seen'), true);
+  listen.call(document, TAKING_OVER, (event) => answer(event, 'waiting'), true);
+  listen.call(document, TAKEN_OVER, (event) => answer(event, 'seen'), true);
 })();

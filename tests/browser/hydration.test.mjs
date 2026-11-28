@@ -228,4 +228,28 @@ describe('markup that a framework takes over', skipWithoutChrome, () => {
 
     assert.deepEqual(result, { whileAScriptLoads: 1, inTheEnd: 1 });
   });
+
+  test('is held back once: switching off and on later does not start the waiting anew', async () => {
+    // A comment as React leaves them, and no framework that ever shows up.
+    const opened = await browser.open({ body: page(`<div id="app"><p id="a">Hello <!-- -->${E.grin}</p></div>`, '') });
+
+    const result = await opened.evaluate(async () => {
+      const grace = window.__notoEmojiOverride.hydration.GRACE_MS;
+      await __t.sleep(grace + 600);
+      await __t.settle();
+      const afterWaiting = window.wrapped();
+
+      await chrome.storage.sync.set({ enabled: false });
+      await __t.sleep(100);
+      const off = window.wrapped();
+      await chrome.storage.sync.set({ enabled: true });
+      // Far less than the waiting takes.
+      await __t.sleep(250);
+      return { afterWaiting, off, onAgain: window.wrapped() };
+    });
+
+    assert.deepEqual(result, { afterWaiting: 1, off: 0, onAgain: 1 });
+    assert.deepEqual(opened.errors, []);
+    await opened.close();
+  });
 });

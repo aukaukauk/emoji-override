@@ -48,9 +48,14 @@ const HELPERS = `window.__t = {
     await this.sleep(60);
   },
   wrapped: (root = document) => [...root.querySelectorAll('.noto-emoji-wrapped')],
+  // Elements that hold nothing but emoji carry a mark and have no wrappers in them.
+  held: (root = document) => [...root.querySelectorAll('[data-noto-emoji-only]')],
+  // How many places in the target are drawn with the emoji font: wrappers, and marked elements,
+  // the target itself included.
   count(target) {
     const root = typeof target === 'string' ? document.querySelector(target) : target;
-    return root.querySelectorAll('.noto-emoji-wrapped').length;
+    const self = root.matches && root.matches('[data-noto-emoji-only]') ? 1 : 0;
+    return self + root.querySelectorAll('.noto-emoji-wrapped, [data-noto-emoji-only]').length;
   },
   marker: () => document.documentElement.hasAttribute('data-noto-emoji-enabled'),
   active: () => Boolean(window.__notoEmojiOverride?.state?.active)
