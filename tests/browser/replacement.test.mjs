@@ -155,4 +155,50 @@ describe('emoji replacement', skipWithoutChrome, () => {
     assert.deepEqual(result, { marker: true, wrapped: 1 });
     await page.close();
   });
+
+  test('does nothing while the settings cannot be read, and starts once they can', async () => {
+    const page = await browser.open({
+      body: `<p id="a">text ${E.grin}</p>`,
+      init: 'window.__chromeStub.failing.read = true;'
+    });
+
+    const result = await page.evaluate(async () => {
+      await __t.sleep(200);
+      await __t.settle();
+      const unreadable = { marker: __t.marker(), active: __t.active(), wrapped: __t.count('#a') };
+
+      // The settings are asked for again after half a second.
+      window.__chromeStub.failing.read = false;
+      await __t.sleep(700);
+      await __t.settle();
+      return { unreadable, readable: { marker: __t.marker(), active: __t.active(), wrapped: __t.count('#a') } };
+    });
+
+    assert.deepEqual(result, {
+      unreadable: { marker: false, active: false, wrapped: 0 },
+      readable: { marker: true, active: true, wrapped: 1 }
+    });
+    await page.close();
+  });
+
+  test('keeps the state it had when a later reading of the settings fails', async () => {
+    const page = await browser.open({ body: `<p id="a">text ${E.grin}</p>`, stub: { storage: { sync: { enabled: false } } } });
+
+    const result = await page.evaluate(async () => {
+      await __t.settle();
+      const off = __t.active();
+      // The user switches it on, but this page cannot read that.
+      window.__chromeStub.failing.read = true;
+      await chrome.storage.sync.set({ enabled: true });
+      await __t.sleep(100);
+      const stillOff = [__t.active(), __t.count('#a')];
+      window.__chromeStub.failing.read = false;
+      await __t.sleep(700);
+      await __t.settle();
+      return { off, stillOff, onAfterRetry: [__t.active(), __t.count('#a')] };
+    });
+
+    assert.deepEqual(result, { off: false, stillOff: [false, 0], onAfterRetry: [true, 1] });
+    await page.close();
+  });
 });

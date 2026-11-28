@@ -112,7 +112,6 @@ h2 {
    or three where the name leaves it little room.
 */
 .status-badge {
-  flex: none;
   min-width: 76px;
   max-width: 150px;
   padding: 4px 8px;
@@ -183,9 +182,14 @@ button {
   transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
-button:hover {
+button:hover:not(:disabled) {
   border-color: #b8c0cc;
   background: #f2f4f7;
+}
+
+/* What the buttons say depends on the settings, which are read after the popup has opened. */
+.pending button {
+  visibility: hidden;
 }
 
 button:disabled {
@@ -199,7 +203,7 @@ button:disabled {
   color: #ffffff;
 }
 
-#toggleBtn.disabled:hover {
+#toggleBtn.disabled:hover:not(:disabled) {
   border-color: var(--accent-hover);
   background: var(--accent-hover);
 }
@@ -246,7 +250,8 @@ button:disabled {
     color: var(--text-primary);
   }
 
-  button:hover {
+  button:hover:not(:disabled) {
+    border-color: #4b5563;
     background: #172033;
   }
 

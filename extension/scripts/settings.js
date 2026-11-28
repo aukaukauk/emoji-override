@@ -19,19 +19,25 @@
     } catch (error) {
       request = Promise.reject(error);
     }
-    return tolerant ? request.catch(() => ({})) : request;
+    // With `tolerant`, an area that cannot be read answers with null instead of rejecting.
+    return tolerant ? request.catch(() => null) : request;
   }
 
   // `enabled` syncs across the user's browsers, `blockedHosts` stays in this profile. Early
-  // versions kept the block list in sync storage as well; that copy is used until the popup
-  // moves it (moveLegacyBlockedHosts), and is reported as `legacyBlockedHosts` until then.
+  // versions kept the block list in sync storage as well. That copy is used until the popup has
+  // copied it into this profile (keepLegacyBlockedHosts), and is reported as `legacyBlockedHosts`
+  // until then. It is never taken out of sync storage: another browser of the same account may
+  // not have made its own copy yet.
   //
-  // With `tolerant`, a storage area that cannot be read counts as empty instead of rejecting.
+  // With `tolerant`, a storage area that cannot be read counts as empty instead of rejecting,
+  // and `complete` says whether both areas were read. Without it, `complete` is always true.
   async function read({ tolerant = false } = {}) {
-    const [syncData, localData] = await Promise.all([
+    const [syncRead, localRead] = await Promise.all([
       getArea('sync', [KEY_ENABLED, KEY_BLOCKED], tolerant),
       getArea('local', [KEY_BLOCKED], tolerant)
     ]);
+    const syncData = syncRead || {};
+    const localData = localRead || {};
 
     const hasLocalList = Object.hasOwn(localData, KEY_BLOCKED);
     const legacyBlockedHosts = hasLocalList ? [] : normalizeHosts(syncData[KEY_BLOCKED]);
@@ -39,7 +45,8 @@
     return {
       enabled: Object.hasOwn(syncData, KEY_ENABLED) ? Boolean(syncData[KEY_ENABLED]) : true,
       blockedHosts: hasLocalList ? normalizeHosts(localData[KEY_BLOCKED]) : legacyBlockedHosts,
-      legacyBlockedHosts
+      legacyBlockedHosts,
+      complete: Boolean(syncRead && localRead)
     };
   }
 
@@ -56,9 +63,8 @@
     return chrome.storage.local.set({ [KEY_BLOCKED]: normalizeHosts(hosts) });
   }
 
-  async function moveLegacyBlockedHosts(hosts) {
-    await chrome.storage.local.set({ [KEY_BLOCKED]: normalizeHosts(hosts) });
-    await chrome.storage.sync.remove(KEY_BLOCKED);
+  function keepLegacyBlockedHosts(hosts) {
+    return chrome.storage.local.set({ [KEY_BLOCKED]: normalizeHosts(hosts) });
   }
 
   // Calls `listener` whenever one of the two settings changes, in any tab or window.
@@ -79,7 +85,7 @@
     isActiveFor,
     setEnabled,
     setBlockedHosts,
-    moveLegacyBlockedHosts,
+    keepLegacyBlockedHosts,
     onChange,
     normalizeHosts
   };

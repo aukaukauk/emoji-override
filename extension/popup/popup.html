@@ -6,7 +6,7 @@
     <title>Noto Emoji Override</title>
     <link rel="stylesheet" href="popup.css" />
   </head>
-  <body>
+  <body class="pending">
     <main class="popup-shell">
       <header class="popup-header">
         <div>
@@ -22,17 +22,17 @@
           <h2 id="globalTitle"></h2>
           <p id="globalDescription"></p>
         </div>
-        <button id="toggleBtn" class="primary-action" type="button">Enable</button>
+        <button id="toggleBtn" class="primary-action" type="button"></button>
       </section>
 
       <section class="panel" aria-labelledby="siteTitle">
         <div class="panel-copy">
           <h2 id="siteTitle"></h2>
           <p id="siteDescription"></p>
-          <p id="hostName" class="host-name">-</p>
+          <p id="hostName" class="host-name">&nbsp;</p>
           <p id="siteState" class="site-state"></p>
         </div>
-        <button id="siteBtn" class="secondary-action" type="button">Disable on this site</button>
+        <button id="siteBtn" class="secondary-action" type="button"></button>
       </section>
 
       <p id="siteHint" class="hint">Site controls are not available on this page.</p>

@@ -12,12 +12,12 @@ describe('the size of replaced emoji', skipWithoutChrome, () => {
   const NOTO_ADVANCE = 1.245;
 
   // Makes the document believe it runs on another system.
-  const system = ({ platform, version, legacy, refuses }) => `(() => {
+  const system = ({ platform, version, legacy, refuses, blank }) => `(() => {
     const data = ${platform === undefined ? 'undefined' : `{
       platform: ${JSON.stringify(platform)},
       getHighEntropyValues: async () => {
         if (${Boolean(refuses)}) throw new Error('not allowed');
-        return { platformVersion: ${JSON.stringify(version || '0.0.0')} };
+        return { platformVersion: ${JSON.stringify(blank ? '' : version || '0.0.0')} };
       }
     }`};
     Object.defineProperty(Navigator.prototype, 'userAgentData', { get: () => data, configurable: true });
@@ -45,6 +45,7 @@ describe('the size of replaced emoji', skipWithoutChrome, () => {
     ['Windows 11', { platform: 'Windows', version: '15.0.0' }, 'windows', 'EmojiOverrideNotoWindows', 0.925],
     ['the first Windows 11', { platform: 'Windows', version: '13.0.0' }, 'windows', 'EmojiOverrideNotoWindows', 0.925],
     ['Windows that does not tell its version', { platform: 'Windows', refuses: true }, 'windows', 'EmojiOverrideNotoWindows', 0.925],
+    ['Windows on a page that keeps the version to itself', { platform: 'Windows', blank: true }, 'windows', 'EmojiOverrideNotoWindows', 0.925],
     ['Windows 10, whose own emoji are as large as Noto', { platform: 'Windows', version: '10.0.0' }, '', 'EmojiOverrideNoto', 1],
     ['Linux, where the system font is Noto', { platform: 'Linux' }, '', 'EmojiOverrideNoto', 1],
     ['Chrome OS', { platform: 'Chrome OS' }, '', 'EmojiOverrideNoto', 1]

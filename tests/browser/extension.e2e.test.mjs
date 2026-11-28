@@ -190,18 +190,18 @@ describe('the installed extension', skipWithoutChrome, () => {
     assert.deepEqual(await press(), { stored: false, pressed: 'false', busy: false, error: '' });
     assert.deepEqual(await press(), { stored: true, pressed: 'true', busy: false, error: '' });
 
-    // A block list that an old version left in sync storage moves to local storage when the
-    // popup opens.
+    // A block list that an old version left in sync storage is copied to local storage when the
+    // popup opens. It stays in sync storage for the other browsers of the account.
     await page.evaluate(async () => {
       await chrome.storage.local.remove('blockedHosts');
       await chrome.storage.sync.set({ blockedHosts: ['Old.example'] });
     });
     await page.goto(popupUrl);
-    const moved = await page.evaluate(async () => {
+    const kept = await page.evaluate(async () => {
       await __t.sleep(300);
       return { sync: await chrome.storage.sync.get(null), local: await chrome.storage.local.get(null) };
     });
-    assert.deepEqual(moved, { sync: { enabled: true }, local: { blockedHosts: ['old.example'] } });
+    assert.deepEqual(kept, { sync: { enabled: true, blockedHosts: ['Old.example'] }, local: { blockedHosts: ['old.example'] } });
 
     assert.deepEqual(page.errors, []);
     await page.close();
