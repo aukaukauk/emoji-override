@@ -32,6 +32,7 @@ describe('the installed extension', skipWithoutChrome, () => {
       return {
         marker: __t.marker(),
         wrapped: spans.length,
+        held: __t.held().length,
         inProtectedPlaces: document.querySelectorAll(protectedSelector).length,
         withoutHtmlParent: spans.filter((span) => span.parentNode.namespaceURI !== 'http://www.w3.org/1999/xhtml').length,
         font: getComputedStyle(spans[0]).fontFamily,
@@ -42,11 +43,17 @@ describe('the installed extension', skipWithoutChrome, () => {
     }, PROTECTED);
 
     assert.equal(initial.marker, true);
-    assert.ok(initial.wrapped > 100, `only ${initial.wrapped} emoji were wrapped`);
+    // The page has emoji in the middle of texts, which are wrapped, and elements that hold
+    // nothing else, which get the font as a whole.
+    assert.ok(initial.wrapped >= 20 && initial.held >= 5, `${initial.wrapped} emoji were wrapped and ${initial.held} elements marked`);
     assert.equal(initial.inProtectedPlaces, 0);
     assert.equal(initial.withoutHtmlParent, 0);
     assert.match(initial.font, /^"?EmojiOverrideNoto/);
-    assert.deepEqual(initial.fontStatus, ['loaded', 'unloaded', 'unloaded'], 'the font loads from the extension URL, in one size');
+    assert.deepEqual(
+      initial.fontStatus,
+      ['loaded', 'loaded', 'unloaded', 'unloaded', 'unloaded', 'unloaded'],
+      'the font loads from the extension URL, in one size, for wrappers and for whole elements'
+    );
     assert.equal(initial.pageSeesSharedState, 'undefined', 'the state object lives in the isolated world only');
 
     const isolated = await inExtension(() => ({
@@ -81,11 +88,11 @@ describe('the installed extension', skipWithoutChrome, () => {
       await __t.settle();
       return {
         heading: document.querySelector('h1').textContent.startsWith('Replaced body'),
-        wrapped: __t.wrapped().length,
+        replaced: __t.count(document.body),
         titleKept: document.title === titleBefore
       };
     });
-    assert.deepEqual(afterReplace, { heading: true, wrapped: 6, titleKept: true });
+    assert.deepEqual(afterReplace, { heading: true, replaced: 6, titleKept: true });
 
     assert.deepEqual(page.errors, []);
     await page.close();
@@ -190,18 +197,18 @@ describe('the installed extension', skipWithoutChrome, () => {
     assert.deepEqual(await press(), { stored: false, pressed: 'false', busy: false, error: '' });
     assert.deepEqual(await press(), { stored: true, pressed: 'true', busy: false, error: '' });
 
-    // A block list that an old version left in sync storage moves to local storage when the
-    // popup opens.
+    // A block list that an old version left in sync storage is copied to local storage when the
+    // popup opens. It stays in sync storage for the other browsers of the account.
     await page.evaluate(async () => {
       await chrome.storage.local.remove('blockedHosts');
       await chrome.storage.sync.set({ blockedHosts: ['Old.example'] });
     });
     await page.goto(popupUrl);
-    const moved = await page.evaluate(async () => {
+    const kept = await page.evaluate(async () => {
       await __t.sleep(300);
       return { sync: await chrome.storage.sync.get(null), local: await chrome.storage.local.get(null) };
     });
-    assert.deepEqual(moved, { sync: { enabled: true }, local: { blockedHosts: ['old.example'] } });
+    assert.deepEqual(kept, { sync: { enabled: true, blockedHosts: ['Old.example'] }, local: { blockedHosts: ['old.example'] } });
 
     assert.deepEqual(page.errors, []);
     await page.close();

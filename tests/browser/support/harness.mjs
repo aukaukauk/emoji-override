@@ -4,6 +4,15 @@ import { after, before } from 'node:test';
 import { findChrome, launchChrome } from './chrome.mjs';
 import { startServer } from './server.mjs';
 
+// Without Chrome these tests are skipped, so that the rest can be run on a machine that has
+// none. Where they must run, on a CI machine (`CI`) or when `REQUIRE_CHROME` is set, a missing
+// Chrome stops the run instead: a release check that passes without having opened a page is
+// worse than one that fails.
+const mustRun = (name) => Boolean(process.env[name]) && process.env[name] !== '0' && process.env[name] !== 'false';
+if (!findChrome() && (mustRun('CI') || mustRun('REQUIRE_CHROME'))) {
+  throw new Error('Chrome was not found, and the browser tests may not be skipped here. Set CHROME_PATH to its executable.');
+}
+
 export const skipWithoutChrome = findChrome() ? {} : { skip: 'Chrome was not found (set CHROME_PATH)' };
 
 // Emoji used in tests, spelled with escapes so that the invisible joiners and variation
@@ -39,9 +48,14 @@ const HELPERS = `window.__t = {
     await this.sleep(60);
   },
   wrapped: (root = document) => [...root.querySelectorAll('.noto-emoji-wrapped')],
+  // Elements that hold nothing but emoji carry a mark and have no wrappers in them.
+  held: (root = document) => [...root.querySelectorAll('[data-noto-emoji-only]')],
+  // How many places in the target are drawn with the emoji font: wrappers, and marked elements,
+  // the target itself included.
   count(target) {
     const root = typeof target === 'string' ? document.querySelector(target) : target;
-    return root.querySelectorAll('.noto-emoji-wrapped').length;
+    const self = root.matches && root.matches('[data-noto-emoji-only]') ? 1 : 0;
+    return self + root.querySelectorAll('.noto-emoji-wrapped, [data-noto-emoji-only]').length;
   },
   marker: () => document.documentElement.hasAttribute('data-noto-emoji-enabled'),
   active: () => Boolean(window.__notoEmojiOverride?.state?.active)

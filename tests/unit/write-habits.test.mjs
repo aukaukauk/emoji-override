@@ -19,12 +19,21 @@ function play(steps, habit) {
 }
 
 describe('a page that sets the whole text', () => {
-  test('is recognised when it overwrites a wrapped text, and wrapped at once from then on', () => {
+  test('is taken for one when it overwrites a wrapped text, and wrapped at once from then on', () => {
+    // Only a guess at first: a page that appends to its emptied node writes the same way. The
+    // write that does away with a text which was still in the node settles it.
     assert.deepEqual(play([
       ['wrapped', 'Saved \u{2705}', 'Failed \u{274C}'],
       ['wrapped', 'Failed \u{274C}', 'Saved \u{2705}'],
       ['plain', 'Saved \u{2705}', 'Done']
-    ]), ['replaced/now', 'replaced/now', 'replaced/now']);
+    ]), ['rewritten/now', 'rewritten/now', 'replaced/now']);
+  });
+
+  test('stays a guess through texts that have nothing to wrap', () => {
+    assert.deepEqual(play([
+      ['wrapped', 'Saved \u{2705}', 'Saving'],
+      ['plain', 'Saving', 'Saved \u{2705}']
+    ]), ['rewritten/now', 'replaced/now']);
   });
 
   test('is recognised when the old text does not survive a write to a plain node', () => {
@@ -102,7 +111,30 @@ describe('a write that says nothing', () => {
   test('a wrapped text that comes back exactly as it was is not proof of anything', () => {
     // Appending the same emoji again to the emptied node gives the same result.
     assert.deepEqual(play([['wrapped', '\u{2B50}', '\u{2B50}']], 'growing'), ['held/never']);
-    assert.deepEqual(play([['wrapped', '\u{2B50}', '\u{2B50}']]), ['replaced/now']);
+    assert.deepEqual(play([['wrapped', '\u{2B50}', '\u{2B50}']]), ['rewritten/now']);
+  });
+});
+
+describe('a text that had emoji from the start and is appended to', () => {
+  // The node was wrapped before the page wrote to it for the first time, so nothing was known.
+  test('loses what it showed once, and is then seen to grow', () => {
+    assert.deepEqual(play([
+      ['wrapped', '\u{1F916} Log:', ' step 1'],
+      ['plain', ' step 1', ' step 1 step 2 \u{2705}'],
+      ['plain', ' step 1 step 2 \u{2705}', ' step 1 step 2 \u{2705} step 3']
+    ]), ['rewritten/now', 'growing/later', 'growing/later']);
+  });
+
+  test('is held once it was wrapped while growing, as any other text that grows', () => {
+    assert.deepEqual(play([
+      ['wrapped', '\u{1F916} Log:', ' step 1'],
+      ['plain', ' step 1', ' step 1 \u{2705}'],
+      ['wrapped', ' step 1 \u{2705}', ' step 2']
+    ]), ['rewritten/now', 'growing/later', 'held/never']);
+  });
+
+  test('a page that is known to set the whole text is not taken for one that appends', () => {
+    assert.deepEqual(play([['plain', 'Loading', 'Loading...']], 'replaced'), ['replaced/now']);
   });
 });
 

@@ -94,13 +94,14 @@ describe('popup', skipWithoutChrome, () => {
     await page.close();
   });
 
-  test('moves a block list from sync storage to local storage', async () => {
+  test('copies a block list from sync storage to local storage and leaves it there', async () => {
     const page = await open({ storage: { sync: { blockedHosts: ['b.example', 'Example.com ', 'a.example'] } } });
     const state = await page.evaluate(snapshot);
 
     assert.deepEqual(state.store.local.blockedHosts, ['a.example', 'b.example', 'example.com']);
-    assert.equal(Object.hasOwn(state.store.sync, 'blockedHosts'), false);
-    assert.equal(state.site, label('unblockSiteButton'), 'the moved list applies right away');
+    // Another browser of the same account may not have made its copy yet.
+    assert.deepEqual(state.store.sync.blockedHosts, ['b.example', 'Example.com ', 'a.example']);
+    assert.equal(state.site, label('unblockSiteButton'), 'the list applies right away');
     await page.close();
   });
 
@@ -128,6 +129,55 @@ describe('popup', skipWithoutChrome, () => {
     const state = await page.evaluate(snapshot);
 
     assert.equal(state.error, label('errorLoad'));
+    await page.close();
+  });
+
+  test('saves nothing while the settings have not been read', async () => {
+    const stored = { sync: { enabled: false }, local: { blockedHosts: ['a.example', 'b.example'] } };
+    // A tab on a site, and settings that cannot be read when the popup opens.
+    const blocked = await browser.open({
+      url: `${browser.server.origin}/extension/popup/popup.html`,
+      stub: { tab: { id: 1, url: 'https://example.com/' }, messages, storage: stored },
+      init: 'window.__chromeStub.failing.read = true;'
+    });
+    const state = await blocked.evaluate(async () => {
+      await __t.sleep(80);
+      const toggle = document.getElementById('toggleBtn');
+      const site = document.getElementById('siteBtn');
+      const disabled = [toggle.disabled, site.disabled];
+      toggle.click();
+      site.click();
+      await __t.sleep(80);
+      const before = JSON.parse(JSON.stringify(__chromeStub.store));
+
+      // The settings can be read again, and a change to them makes the popup read them.
+      __chromeStub.failing.read = false;
+      await chrome.storage.sync.set({ enabled: false });
+      await __t.sleep(80);
+      site.click();
+      await __t.sleep(80);
+      return { disabled, before, after: JSON.parse(JSON.stringify(__chromeStub.store)), usable: [toggle.disabled, site.disabled] };
+    });
+
+    assert.deepEqual(state.disabled, [true, true]);
+    assert.deepEqual(state.before, stored, 'nothing was saved over the list that could not be read');
+    assert.deepEqual(state.usable, [false, false]);
+    assert.deepEqual(state.after.local.blockedHosts, ['a.example', 'b.example', 'example.com']);
+    await blocked.close();
+  });
+
+  test('offers no switch for the Chrome Web Store, where no extension runs', async () => {
+    for (const url of ['https://chromewebstore.google.com/detail/some-extension/abcdef', 'https://chrome.google.com/webstore/detail/abc']) {
+      const page = await open({ tab: { id: 1, url } });
+      const state = await page.evaluate(snapshot);
+      assert.deepEqual([state.siteDisabled, state.hint, state.host], [true, true, label('hostUnavailable')], url);
+      await page.close();
+    }
+
+    // Other pages of that host are ordinary pages.
+    const page = await open({ tab: { id: 1, url: 'https://chrome.google.com/intl/en/chrome/' } });
+    const state = await page.evaluate(snapshot);
+    assert.deepEqual([state.siteDisabled, state.host], [false, 'chrome.google.com']);
     await page.close();
   });
 });

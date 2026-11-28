@@ -19,9 +19,12 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 // THIRD_PARTY_LICENSES.md.
 const ROOT_DOCUMENTS = ['LICENSE', 'NOTICE', 'PRIVACY.md', 'THIRD_PARTY_LICENSES.md'];
 
+// Orders by name, by code units: the same on every system.
+const byName = (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+
 function listFiles(directory, prefix = '') {
   const files = [];
-  const items = readdirSync(directory, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1));
+  const items = readdirSync(directory, { withFileTypes: true }).sort(byName);
   for (const item of items) {
     // Finder and editors leave hidden files behind.
     if (item.name.startsWith('.')) continue;
@@ -46,7 +49,7 @@ export function collectEntries(root = repoRoot) {
     entries.push({ name, data: readFileSync(join(root, name)) });
   }
 
-  return entries.sort((a, b) => (a.name < b.name ? -1 : 1));
+  return entries.sort(byName);
 }
 
 // Every file that manifest.json, and the pages it opens, point to. A file that is missing here
@@ -87,7 +90,8 @@ export function referencedFiles(entries) {
     if (!page.endsWith('.html') || !entries.some((entry) => entry.name === page)) continue;
     for (const [, target] of text(page).matchAll(/<(?:script|link|img)\b[^>]*?\b(?:src|href)\s*=\s*["']([^"'#?]+)/gi)) {
       if (/^[a-z][a-z0-9+.-]*:|^\/\//i.test(target)) continue;
-      add(posix.normalize(posix.join(posix.dirname(page), target)), page);
+      // A path that starts with a slash counts from the root of the extension.
+      add(target.startsWith('/') ? posix.normalize(target) : posix.normalize(posix.join(posix.dirname(page), target)), page);
     }
   }
 

@@ -84,7 +84,7 @@ describe('normalizeHosts', () => {
 describe('read', () => {
   test('is on with no blocked sites when nothing is stored', async () => {
     useStorage();
-    assert.deepEqual(await settings.read(), { enabled: true, blockedHosts: [], legacyBlockedHosts: [] });
+    assert.deepEqual(await settings.read(), { enabled: true, blockedHosts: [], legacyBlockedHosts: [], complete: true });
   });
 
   test('takes the switch from sync storage and the block list from local storage', async () => {
@@ -92,7 +92,8 @@ describe('read', () => {
     assert.deepEqual(await settings.read(), {
       enabled: false,
       blockedHosts: ['a.example', 'b.example'],
-      legacyBlockedHosts: []
+      legacyBlockedHosts: [],
+      complete: true
     });
   });
 
@@ -101,18 +102,19 @@ describe('read', () => {
     assert.deepEqual(await settings.read(), {
       enabled: true,
       blockedHosts: ['old.example'],
-      legacyBlockedHosts: ['old.example']
+      legacyBlockedHosts: ['old.example'],
+      complete: true
     });
   });
 
   test('lets a local block list win, even an empty one', async () => {
     useStorage({ sync: { blockedHosts: ['old.example'] }, local: { blockedHosts: [] } });
-    assert.deepEqual(await settings.read(), { enabled: true, blockedHosts: [], legacyBlockedHosts: [] });
+    assert.deepEqual(await settings.read(), { enabled: true, blockedHosts: [], legacyBlockedHosts: [], complete: true });
   });
 
   test('survives values of the wrong type', async () => {
     useStorage({ sync: { enabled: 0 }, local: { blockedHosts: 'example.com' } });
-    assert.deepEqual(await settings.read(), { enabled: false, blockedHosts: [], legacyBlockedHosts: [] });
+    assert.deepEqual(await settings.read(), { enabled: false, blockedHosts: [], legacyBlockedHosts: [], complete: true });
   });
 
   for (const failure of ['sync.get', 'sync.get!', 'local.get', 'local.get!']) {
@@ -122,17 +124,18 @@ describe('read', () => {
 
       await assert.rejects(settings.read());
 
-      // The area that failed counts as empty; the other one is still used.
+      // The area that failed counts as empty; the other one is still used. `complete` says
+      // that this is not what is stored.
       const expected = failure.startsWith('sync')
-        ? { enabled: true, blockedHosts: ['a.example'], legacyBlockedHosts: [] }
-        : { enabled: false, blockedHosts: [], legacyBlockedHosts: [] };
+        ? { enabled: true, blockedHosts: ['a.example'], legacyBlockedHosts: [], complete: false }
+        : { enabled: false, blockedHosts: [], legacyBlockedHosts: [], complete: false };
       assert.deepEqual(await settings.read({ tolerant: true }), expected);
     });
   }
 
-  test('is on when there is no extension API at all and it is tolerant', async () => {
+  test('reads nothing, and says so, when there is no extension API at all and it is tolerant', async () => {
     assert.equal(typeof globalThis.chrome, 'undefined');
-    assert.deepEqual(await settings.read({ tolerant: true }), { enabled: true, blockedHosts: [], legacyBlockedHosts: [] });
+    assert.deepEqual(await settings.read({ tolerant: true }), { enabled: true, blockedHosts: [], legacyBlockedHosts: [], complete: false });
     await assert.rejects(settings.read());
   });
 });
@@ -184,37 +187,70 @@ describe('writing', () => {
   });
 });
 
-describe('moveLegacyBlockedHosts', () => {
-  test('copies the list to local storage, then removes it from sync storage', async () => {
+describe('keepLegacyBlockedHosts', () => {
+  test('copies the list to local storage and leaves it in sync storage', async () => {
     const storage = useStorage({ sync: { enabled: false, blockedHosts: ['old.example'] } });
     const { legacyBlockedHosts } = await settings.read();
     storage.calls.length = 0;
 
-    await settings.moveLegacyBlockedHosts(legacyBlockedHosts);
+    await settings.keepLegacyBlockedHosts(legacyBlockedHosts);
 
-    assert.deepEqual(storage.calls, ['local.set', 'sync.remove']);
-    assert.deepEqual(storage.data, { sync: { enabled: false }, local: { blockedHosts: ['old.example'] } });
-    assert.deepEqual(await settings.read(), { enabled: false, blockedHosts: ['old.example'], legacyBlockedHosts: [] });
+    assert.deepEqual(storage.calls, ['local.set']);
+    assert.deepEqual(storage.data, {
+      sync: { enabled: false, blockedHosts: ['old.example'] },
+      local: { blockedHosts: ['old.example'] }
+    });
+    assert.deepEqual(await settings.read(), {
+      enabled: false,
+      blockedHosts: ['old.example'],
+      legacyBlockedHosts: [],
+      complete: true
+    });
   });
 
-  test('leaves the list in sync storage when the copy fails', async () => {
+  test('rejects when the copy fails, and the list is still read from sync storage', async () => {
     const storage = useStorage({ sync: { blockedHosts: ['old.example'] } });
     storage.failing.add('local.set');
 
-    await assert.rejects(settings.moveLegacyBlockedHosts(['old.example']));
-
-    assert.deepEqual(storage.data, { sync: { blockedHosts: ['old.example'] }, local: {} });
-    assert.ok(!storage.calls.includes('sync.remove'));
-  });
-
-  test('still has the list when the removal fails', async () => {
-    const storage = useStorage({ sync: { blockedHosts: ['old.example'] } });
-    storage.failing.add('sync.remove');
-
-    await assert.rejects(settings.moveLegacyBlockedHosts(['old.example']));
+    await assert.rejects(settings.keepLegacyBlockedHosts(['old.example']));
 
     storage.failing.clear();
+    assert.deepEqual(storage.data, { sync: { blockedHosts: ['old.example'] }, local: {} });
     assert.deepEqual((await settings.read()).blockedHosts, ['old.example']);
+  });
+
+  // Two browsers of one account share sync storage and have a local storage each. The stand-in
+  // keeps a copy of what it is given, so after each step what it holds is carried over.
+  test('leaves the list for another browser of the same account, in either order', async () => {
+    for (const order of [['a', 'b'], ['b', 'a']]) {
+      let shared = { blockedHosts: ['blocked.example'] };
+      const locals = { a: {}, b: {} };
+      const on = async (name, work) => {
+        const storage = useStorage({ sync: shared, local: locals[name] });
+        const result = await work();
+        shared = storage.data.sync;
+        locals[name] = storage.data.local;
+        return result;
+      };
+      // What the popup does when it opens.
+      const open = (name) => on(name, async () => {
+        const state = await settings.read();
+        if (state.legacyBlockedHosts.length) await settings.keepLegacyBlockedHosts(state.legacyBlockedHosts);
+        return (await settings.read()).blockedHosts;
+      });
+      const [first, second] = order;
+
+      // The second browser reads the list before and after the first one has opened its popup.
+      assert.deepEqual(await on(second, async () => (await settings.read()).blockedHosts), ['blocked.example']);
+      assert.deepEqual(await open(first), ['blocked.example']);
+      assert.deepEqual(await on(second, async () => (await settings.read()).blockedHosts), ['blocked.example'], `order ${order}`);
+      assert.deepEqual(await open(second), ['blocked.example']);
+
+      // The first browser allows the site again. The other one keeps its own list.
+      await on(first, () => settings.setBlockedHosts([]));
+      assert.deepEqual(await on(first, async () => (await settings.read()).blockedHosts), []);
+      assert.deepEqual(await on(second, async () => (await settings.read()).blockedHosts), ['blocked.example']);
+    }
   });
 });
 

@@ -29,11 +29,17 @@
     }
   }
 
+  // Chrome runs no extension on its own store, so there is nothing to switch there.
+  function isStore(url) {
+    return url.hostname === 'chromewebstore.google.com'
+      || (url.hostname === 'chrome.google.com' && url.pathname.startsWith('/webstore'));
+  }
+
   function extractHost(url) {
     if (!url) return null;
     try {
       const parsed = new URL(url);
-      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      if ((parsed.protocol === 'http:' || parsed.protocol === 'https:') && !isStore(parsed)) {
         return parsed.hostname.toLowerCase();
       }
     } catch {
@@ -76,6 +82,11 @@
     let blockedHosts = [];
     let isBlocked = false;
     let saving = false;
+    // Whether the settings have been read at all. Until then the block list here is empty, and
+    // saving it would put that empty list in the place of the stored one.
+    let loaded = false;
+    // Reads can overlap, and only the answer of the one that was started last counts.
+    let refreshes = 0;
 
     function setError(message) {
       errorEl.textContent = message || '';
@@ -93,14 +104,14 @@
       toggleBtn.classList.toggle('enabled', enabled);
       toggleBtn.classList.toggle('disabled', !enabled);
       toggleBtn.textContent = enabled ? msg('disableButton') : msg('enableButton');
-      toggleBtn.disabled = saving;
+      toggleBtn.disabled = saving || !loaded;
       toggleBtn.setAttribute('aria-pressed', String(enabled));
 
       statusEl.textContent = enabled ? msg('statusEnabled') : msg('statusDisabled');
       statusEl.classList.toggle('enabled', enabled);
       statusEl.classList.toggle('disabled', !enabled);
 
-      siteBtn.disabled = saving || !currentHost;
+      siteBtn.disabled = saving || !loaded || !currentHost;
       siteBtn.classList.toggle('blocked', isBlocked);
       siteBtn.textContent = !currentHost
         ? msg('siteButtonUnavailable')
@@ -121,27 +132,41 @@
           ? msg('siteBlocked')
           : msg('siteActive');
       }
+
+      // The buttons and the host have no text until now (see popup.css).
+      document.body.classList.remove('pending');
     }
 
-    async function refreshState({ moveLegacyList = false } = {}) {
+    async function refreshState({ keepLegacyList = false } = {}) {
+      const id = ++refreshes;
       try {
         const state = await settings.read();
+        if (id !== refreshes) return;
+
         enabled = state.enabled;
         blockedHosts = state.blockedHosts;
+        loaded = true;
         updateDerivedState();
         setError('');
 
-        if (moveLegacyList && state.legacyBlockedHosts.length) {
-          // If the move fails, the list simply keeps being read from sync storage.
-          await settings.moveLegacyBlockedHosts(state.legacyBlockedHosts).catch(() => {});
+        if (keepLegacyList && state.legacyBlockedHosts.length) {
+          // If this fails, the list simply keeps being read from sync storage.
+          await settings.keepLegacyBlockedHosts(state.legacyBlockedHosts).catch(() => {});
         }
       } catch {
+        if (id !== refreshes) return;
         setError(msg('errorLoad'));
       }
       render();
     }
 
-    await refreshState({ moveLegacyList: true });
+    // After a save that failed: what is stored is shown again, with the reason on top.
+    async function showSaveFailed() {
+      await refreshState();
+      setError(msg('errorSave'));
+    }
+
+    await refreshState({ keepLegacyList: true });
 
     toggleBtn.addEventListener('click', async () => {
       const previous = enabled;
@@ -150,16 +175,18 @@
       setError('');
       render();
 
+      let failed = false;
       try {
         await settings.setEnabled(enabled);
       } catch {
         enabled = previous;
-        setError(msg('errorSave'));
+        failed = true;
       } finally {
         saving = false;
         updateDerivedState();
         render();
       }
+      if (failed) await showSaveFailed();
     });
 
     siteBtn.addEventListener('click', async () => {
@@ -180,16 +207,18 @@
       setError('');
       render();
 
+      let failed = false;
       try {
         await settings.setBlockedHosts(blockedHosts);
       } catch {
         blockedHosts = previousBlockedHosts;
         updateDerivedState();
-        setError(msg('errorSave'));
+        failed = true;
       } finally {
         saving = false;
         render();
       }
+      if (failed) await showSaveFailed();
     });
 
     settings.onChange(() => {

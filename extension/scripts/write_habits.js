@@ -16,6 +16,10 @@
   //   'held'      it was wrapped while growing, and the next write did not repeat the old text.
   //               A page that appends would do exactly that, so the node is left alone until a
   //               write shows that the page sets the whole text.
+  //   'rewritten' it was wrapped, and the page then wrote something that had nothing to do
+  //               with the old text. A page that sets the whole text does that, and so does one
+  //               that appends: its node was empty. Taken for the first until a write shows
+  //               the second.
   //   'replaced'  the page sets the whole text
   //
   // When to wrap after a write:
@@ -26,7 +30,7 @@
   const WAIT_MS = { now: 0, soon: 300, later: 1500 };
 
   function whenFor(habit) {
-    if (habit === 'replaced') return 'now';
+    if (habit === 'replaced' || habit === 'rewritten') return 'now';
     if (habit === 'held') return 'never';
     return habit === 'growing' ? 'later' : 'soon';
   }
@@ -46,14 +50,15 @@
       // A new text, or a piece appended to the old one: the write looks the same either way. A
       // node that has been growing is more likely appended to, and gets the benefit of the doubt.
       if (habit === 'growing' || habit === 'held') return { habit: 'held', wrap: 'never' };
-      return { habit: 'replaced', wrap: 'now' };
+      return { habit: habit === 'replaced' ? 'replaced' : 'rewritten', wrap: 'now' };
     }
 
     // The first text in an empty node, or the same text again: nothing learned.
     if (before === '' || before === after) return { habit, wrap: whenFor(habit) };
 
     if (extends_(before, after)) {
-      const next = habit || 'growing';
+      // After a guess, a text that grows is the sign of a page that appends, or of a stream.
+      const next = !habit || habit === 'rewritten' ? 'growing' : habit;
       return { habit: next, wrap: whenFor(next) };
     }
 

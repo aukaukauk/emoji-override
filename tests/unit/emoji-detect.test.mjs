@@ -177,20 +177,23 @@ describe('hasEmojiCandidate', () => {
     assertNone(missed, 'ruled out');
   });
 
-  test('rules out text without emoji, apart from three joining characters', () => {
+  test('rules out text without emoji, apart from two characters that go with emoji', () => {
     const hits = [];
     for (const character of everyCharacter()) {
       if (EMOJI.test(character) || PICTOGRAPHIC.test(character)) continue;
       if (hasEmojiCandidate(character)) hits.push(character);
     }
 
-    // These also occur in ordinary text, for example between Devanagari letters. Such a text is
-    // then split into clusters, and none of its clusters is an emoji.
-    assert.deepEqual(hits, [ZWJ, KEYCAP, VS16]);
+    // A text with one of these and no emoji is split into clusters, and none of them is an emoji.
+    assert.deepEqual(hits, [KEYCAP, VS16]);
 
+    // The joiner is not one of them: it is part of ordinary words in several scripts, and a
+    // whole paragraph of those would be split for nothing.
     const devanagari = `\u{0915}\u{094D}${ZWJ}\u{0937}`;
-    assert.equal(hasEmojiCandidate(devanagari), true);
+    assert.equal(hasEmojiCandidate(devanagari), false);
     assert.deepEqual(emojiIn(devanagari), []);
+    const sinhala = `\u{0DC1}\u{0DCA}${ZWJ}\u{0DBB}\u{0DD3} \u{0DBD}\u{0D82}\u{0D9A}\u{0DCF}`;
+    assert.equal(hasEmojiCandidate(sinhala), false);
 
     for (const text of ['', 'Plain text, 12:30 #1 * (c)', '\u{00A9} \u{2122} \u{00AE} \u{2665} \u{2639} \u{2194}', '\u{4E2D}\u{6587}\u{FF0C}\u{65E5}\u{672C}\u{8A9E}\u{3001}\u{D55C}\u{AD6D}\u{C5B4}']) {
       assert.equal(hasEmojiCandidate(text), false, JSON.stringify(text));

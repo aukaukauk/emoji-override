@@ -6,6 +6,10 @@
   const { hasEmojiCandidate, splitAtEmoji } = emoji;
 
   const CLASS_NAME = 'noto-emoji-wrapped';
+  // Set on an element of the page that holds nothing but emoji: the stylesheet gives the font to
+  // the element itself, and its text is left as it is (see mark() below).
+  const HELD_ATTRIBUTE = 'data-noto-emoji-only';
+  const HELD_SELECTOR = `[${HELD_ATTRIBUTE}]`;
   const HTML_NAMESPACE = 'http://www.w3.org/1999/xhtml';
 
   // Text directly inside these elements is left alone. This is tested against the parent of
@@ -31,8 +35,9 @@
 
   // The same elements as ancestors at any depth, plus regions that are off limits as a whole:
   // <head>, editing hosts (including read-only islands inside them), spans created here, and
-  // the Monaco and Ace code editors. Those two draw their lines with ordinary elements rather
-  // than <pre> or contenteditable, and measure that DOM to place the cursor.
+  // the Monaco and Ace code editors and the xterm.js terminal. Those draw their lines with
+  // ordinary elements rather than <pre> or contenteditable, and measure that DOM to place the
+  // cursor or to keep their columns in line.
   const SKIP_SELECTOR = [
     ...SKIP_TAGS,
     'head',
@@ -41,14 +46,15 @@
     '[contenteditable="plaintext-only" i]',
     '.monaco-editor',
     '.ace_editor',
+    '.xterm',
     `.${CLASS_NAME}`
   ].join(',');
 
   // A <form> exposes its controls as properties and a document exposes named forms and images,
   // so `form.parentNode`, `form.classList` or `document.body` may be an element the page gave
-  // that name. Where a wrong answer would throw, send a walk up the tree in circles, or make a
-  // form that was removed look as if it were still in the document, the lookup goes through the
-  // prototype instead.
+  // that name. Where a wrong answer would throw, send a walk up the tree in circles, leave a
+  // form out, or make a form that was removed look as if it were still in the document, the
+  // lookup goes through the prototype instead. That holds for everything asked of the document.
   const prototypeGetter = (prototype, name) => Object.getOwnPropertyDescriptor(prototype, name).get;
   const bodyOf = prototypeGetter(Document.prototype, 'body');
   const classListOf = prototypeGetter(Element.prototype, 'classList');
@@ -58,6 +64,19 @@
   const localNameOf = prototypeGetter(Element.prototype, 'localName');
   const namespaceOf = prototypeGetter(Element.prototype, 'namespaceURI');
   const openShadowRootOf = prototypeGetter(Element.prototype, 'shadowRoot');
+  const firstChildOf = prototypeGetter(Node.prototype, 'firstChild');
+  const lastChildOf = prototypeGetter(Node.prototype, 'lastChild');
+  const hasAttribute = Element.prototype.hasAttribute;
+  const setAttribute = Element.prototype.setAttribute;
+  const removeAttribute = Element.prototype.removeAttribute;
+  const isContentEditableOf = prototypeGetter(HTMLElement.prototype, 'isContentEditable');
+  const readyStateOf = prototypeGetter(Document.prototype, 'readyState');
+  const createElementNS = Document.prototype.createElementNS;
+  const createTextNode = Document.prototype.createTextNode;
+  const createDocumentFragment = Document.prototype.createDocumentFragment;
+  const createTreeWalker = Document.prototype.createTreeWalker;
+  const listen = EventTarget.prototype.addEventListener;
+  const selectionOf = Document.prototype.getSelection;
   const matchesSelector = Element.prototype.matches;
   const querySelector = Element.prototype.querySelector;
   const rootNodeOf = Node.prototype.getRootNode;
@@ -84,6 +103,21 @@
   const HOST_CHECK_MS = 250;
   const HOST_CHECK_TICKS = 128;
 
+  // Elements other than custom elements that can have a shadow root. A closed one is asked for
+  // each time a walk comes by, and not again later.
+  const SHADOW_TAGS = new Set([
+    'article', 'aside', 'blockquote', 'body', 'div', 'footer', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'header', 'main', 'nav', 'p', 'section', 'span'
+  ]);
+
+  // The only attributes whose changes are followed. An element that becomes editable is to be
+  // left alone from then on, and one that stops being editable can be worked on. The other is
+  // our own mark, which some pages take off the elements they update.
+  const WATCHED_ATTRIBUTES = ['contenteditable', HELD_ATTRIBUTE];
+
+  // A page that takes the mark off an element this many times keeps it off.
+  const MARK_LIMIT = 3;
+
   const requestIdle = window.requestIdleCallback || ((callback) => {
     return window.setTimeout(() => callback(), 50);
   });
@@ -109,6 +143,16 @@
   // nodes that wait for their text to settle before they are wrapped.
   const habitOf = new WeakMap();
   const pendingWraps = new Map();
+
+  // Elements that hold nothing but emoji and carry the mark: element -> the text it held when it
+  // was last looked at. And how often the page has taken the mark off an element.
+  let held = new WeakMap();
+  let unmarked = new WeakMap();
+  // Elements that are about to be marked: [element, its text node, the text, ...]. They are
+  // looked at together at the end of a stretch of work, because that takes their computed
+  // styles, and asking for those between changes to the document makes the browser work them
+  // out again each time.
+  let toHold = [];
 
   const pendingRoots = new Set();
   // Nodes that the page put into a node whose walk is still to come: that walk meets them, so
@@ -156,6 +200,11 @@
     return Boolean(node && nodeTypeOf.call(node) === Node.ELEMENT_NODE);
   }
 
+  // Covers designMode and CSS user-modify as well as the attribute.
+  function isEditable(node) {
+    return isElement(node) && namespaceOf.call(node) === HTML_NAMESPACE && isContentEditableOf.call(node);
+  }
+
   // Cheap test on the direct parent of a text node. Wrapping inserts an HTML <span>, which only
   // renders inside HTML elements: in SVG <text> or MathML it would make the emoji disappear.
   function isSkippedParent(parent) {
@@ -171,7 +220,7 @@
     return isElement(root)
       && (SKIP_TAGS.has(localNameOf.call(root))
         || classListOf.call(root).contains(CLASS_NAME)
-        || root.isContentEditable);
+        || isEditable(root));
   }
 
   // Only a shadow root has a host. `.host` is never read off anything else: on a document or a
@@ -189,9 +238,9 @@
     let element = isElement(container) ? container : hostOf(container);
     if (!element) return false;
 
-    // Covers designMode and CSS user-modify. Editing hosts declared by attribute are in the
-    // selector, which also catches read-only islands inside them.
-    if (element.isContentEditable) return true;
+    // Editing hosts declared by attribute are in the selector as well, which also catches
+    // read-only islands inside them.
+    if (isEditable(element)) return true;
 
     const visited = [];
     let skipped = false;
@@ -224,12 +273,14 @@
     if (!spanTemplate) {
       // The namespace is spelled out because createElement() makes a plain XML element, without
       // `style`, in XML documents such as a feed shown by the browser's XML viewer.
-      spanTemplate = document.createElementNS(HTML_NAMESPACE, 'span');
+      spanTemplate = createElementNS.call(document, HTML_NAMESPACE, 'span');
       spanTemplate.classList.add(CLASS_NAME);
       // Repeated inline because the stylesheet does not reach into shadow trees, while the
       // inherited custom property does.
-      spanTemplate.style.display = 'contents';
-      spanTemplate.style.fontFamily = 'var(--emoji-override-font-family, inherit)';
+      // Marked important, like the font in the stylesheet: a rule of the page for every <span>
+      // would otherwise give the wrapper a box, or its own font.
+      spanTemplate.style.setProperty('display', 'contents', 'important');
+      spanTemplate.style.setProperty('font-family', 'var(--emoji-override-font-family, inherit)', 'important');
       spanTemplate.style.lineHeight = 'var(--emoji-override-line-height, inherit)';
     }
 
@@ -237,6 +288,41 @@
     const span = cloneNode.call(spanTemplate, false);
     span.textContent = text;
     return span;
+  }
+
+  // Where the user's selection begins and ends, if either is in this text node of the page.
+  // Emptying the node would leave that end at its start, and the user with a selection that is
+  // not the one they made.
+  function selectionEndsIn(node) {
+    const selection = selectionOf.call(document);
+    if (!selection || !selection.rangeCount) return null;
+
+    const { anchorNode, focusNode } = selection;
+    if (anchorNode !== node && focusNode !== node) return null;
+    return { selection, anchorNode, anchorOffset: selection.anchorOffset, focusNode, focusOffset: selection.focusOffset };
+  }
+
+  // The place in the pieces that shows what was at `offset` in the text they were made from.
+  function placeInPieces(pieces, offset) {
+    let rest = offset;
+    let text = null;
+    // The first piece is the canary, which is empty.
+    for (let index = 1; index < pieces.length; index += 1) {
+      text = pieces[index].nodeType === Node.TEXT_NODE ? pieces[index] : pieces[index].firstChild;
+      if (rest <= text.length) return [text, rest];
+      rest -= text.length;
+    }
+    return [text, text.length];
+  }
+
+  function keepSelection(ends, node, pieces) {
+    const anchor = ends.anchorNode === node ? placeInPieces(pieces, ends.anchorOffset) : [ends.anchorNode, ends.anchorOffset];
+    const focus = ends.focusNode === node ? placeInPieces(pieces, ends.focusOffset) : [ends.focusNode, ends.focusOffset];
+    try {
+      ends.selection.setBaseAndExtent(anchor[0], anchor[1], focus[0], focus[1]);
+    } catch {
+      // The other end is no longer where it was. The selection stays as the browser left it.
+    }
   }
 
   // Wraps the emoji of one text node of the page. Returns the last text node it made, which is
@@ -266,30 +352,203 @@
 
     // Text and emoji in turn, starting and ending with text that may be empty.
     const parts = splitAtEmoji(text);
-    if (!parts) return null;
+    if (!parts) {
+      if (held.has(parent)) letGoOf(parent);
+      return null;
+    }
 
-    const pieces = [document.createTextNode('')];
+    if (isOnlyEmoji(parts) && mayHold(parent, node)) {
+      if (held.has(parent)) held.set(parent, text);
+      else toHold.push(parent, node, text);
+      return null;
+    }
+
+    if (held.has(parent)) letGoOf(parent);
+    return wrapInPieces(node, parent, text, parts);
+  }
+
+  function wrapInPieces(node, parent, text, parts) {
+    const pieces = [createTextNode.call(document, '')];
     for (let index = 0; index < parts.length; index += 1) {
       if (index % 2) {
         pieces.push(createEmojiSpan(parts[index]));
       } else if (parts[index]) {
-        pieces.push(document.createTextNode(parts[index]));
+        pieces.push(createTextNode.call(document, parts[index]));
       }
     }
 
-    const fragment = document.createDocumentFragment();
+    const fragment = createDocumentFragment.call(document);
     for (const piece of pieces) {
       fragment.appendChild(piece);
       anchorOf.set(piece, node);
     }
 
+    const selected = selectionEndsIn(node);
     insertBefore.call(parent, fragment, node.nextSibling);
     node.data = '';
     wrappedTexts.set(node, { pieces, text });
     wrappedBefore = true;
+    if (selected) keepSelection(selected, node, pieces);
 
     const last = pieces[pieces.length - 1];
     return last.firstChild || last;
+  }
+
+  // An element that holds nothing but emoji needs no wrappers: the font can be given to the
+  // element as a whole, with a mark that the stylesheet goes by. Its text node is not touched,
+  // which is the least a page can be asked to put up with, and the only way that costs next to
+  // nothing where a page shows thousands of emoji, each in an element of its own. (Taking a
+  // text apart and putting it together again tells every program that follows the page through
+  // the accessibility interface about each node, and on Windows that alone can take seconds.)
+  //
+  // The stylesheet's font for such elements has no space character, so the browser takes the
+  // measures of the line from the font that follows it, the system's, and draws only the emoji
+  // with it.
+
+  const BLANKS = /^[ \t\n\r\f]*$/;
+
+  // Emoji with at most blanks around and between them?
+  function isOnlyEmoji(parts) {
+    for (let index = 0; index < parts.length; index += 2) {
+      if (parts[index] && !BLANKS.test(parts[index])) return false;
+    }
+    return true;
+  }
+
+  // The cheap part of the question whether an element can be given the font as a whole: the
+  // text is all there is in it, and the stylesheet reaches it.
+  function mayHold(parent, node) {
+    return firstChildOf.call(parent) === node
+      && lastChildOf.call(parent) === node
+      && localNameOf.call(parent) !== 'body'
+      && rootNodeOf.call(parent) === document
+      && (unmarked.get(parent) || 0) < MARK_LIMIT;
+  }
+
+  // The dear part: nothing else in the element is drawn with its font. A list item draws its
+  // number with it, and `::before` and `::after` draw their text with it.
+  function drawsNothingElse(element) {
+    return window.getComputedStyle(element).display !== 'list-item'
+      && window.getComputedStyle(element, '::before').content === 'none'
+      && window.getComputedStyle(element, '::after').content === 'none';
+  }
+
+  function mark(element, text) {
+    setAttribute.call(element, HELD_ATTRIBUTE, '');
+    held.set(element, text);
+    // From here on something in the document is ours.
+    wrappedBefore = true;
+  }
+
+  // Takes the mark off. What becomes of the element's text is the caller's business.
+  function letGoOf(element) {
+    held.delete(element);
+    removeAttribute.call(element, HELD_ATTRIBUTE);
+  }
+
+  // The text of an element if that text is all there is in it, or null.
+  function onlyTextOf(element) {
+    const node = firstChildOf.call(element);
+    return node && node === lastChildOf.call(element) && nodeTypeOf.call(node) === Node.TEXT_NODE ? node.data : null;
+  }
+
+  // Marks the elements that were found to hold only emoji, or wraps their text after all.
+  function holdWaiting() {
+    if (!toHold.length) return;
+
+    const waiting = toHold;
+    toHold = [];
+
+    // First everything that only reads, then everything that writes.
+    const verdicts = [];
+    for (let index = 0; index < waiting.length; index += 3) {
+      const element = waiting[index];
+      const node = waiting[index + 1];
+      const unchanged = isActive() && !holding && isConnectedOf.call(element) && !held.has(element)
+        && mayHold(element, node) && node.data === waiting[index + 2];
+      verdicts.push(unchanged ? drawsNothingElse(element) : null);
+    }
+
+    for (let index = 0; index < waiting.length; index += 3) {
+      const verdict = verdicts[index / 3];
+      if (verdict) {
+        mark(waiting[index], waiting[index + 2]);
+      } else if (verdict === false) {
+        const parts = splitAtEmoji(waiting[index + 2]);
+        if (parts) wrapInPieces(waiting[index + 1], waiting[index], waiting[index + 2], parts);
+      }
+      // null: something has changed since. Whatever changed it has queued the node again.
+    }
+  }
+
+  // Looks at a marked element again after the page has done something to it. Returns whether
+  // it still holds nothing but emoji; if not, the mark is taken off.
+  function stillHolds(element) {
+    const text = onlyTextOf(element);
+    if (text !== null && text === held.get(element) && !isEditable(element)) return true;
+
+    const parts = text === null || isSkippedContext(element) ? null : splitAtEmoji(text);
+    if (parts && isOnlyEmoji(parts)) {
+      held.set(element, text);
+      return true;
+    }
+
+    letGoOf(element);
+    return false;
+  }
+
+  // The marked elements in a subtree that has just been walked: ones that were out of the
+  // document for a while and may have been changed there, and copies that the page has made of
+  // a marked element, mark included.
+  function lookAtMarked(root) {
+    const marked = Array.from(queryAll(root, HELD_SELECTOR));
+    if (isElement(root) && hasAttribute.call(root, HELD_ATTRIBUTE)) marked.push(root);
+
+    for (const element of marked) {
+      if (held.has(element)) {
+        stillHolds(element);
+        continue;
+      }
+
+      // A copy. It is taken on if it could have been marked here, and stripped otherwise.
+      const text = onlyTextOf(element);
+      const parts = text === null || isSkippedContext(element) || !mayHold(element, firstChildOf.call(element))
+        ? null
+        : splitAtEmoji(text);
+      if (parts && isOnlyEmoji(parts)) held.set(element, text);
+      else removeAttribute.call(element, HELD_ATTRIBUTE);
+    }
+  }
+
+  // The page has changed the mark of an element.
+  function pageChangedMark(element) {
+    if (!isElement(element)) return;
+
+    if (!held.has(element)) {
+      // Not one of ours, or no longer. A mark on it is the page's doing, and comes off.
+      if (hasAttribute.call(element, HELD_ATTRIBUTE)) removeAttribute.call(element, HELD_ATTRIBUTE);
+      return;
+    }
+    if (hasAttribute.call(element, HELD_ATTRIBUTE)) return;
+
+    // A page that brings its elements in line with what its server sent takes off what it does
+    // not know. The mark goes back on, but not for ever: then the text is wrapped instead.
+    const times = (unmarked.get(element) || 0) + 1;
+    unmarked.set(element, times);
+    if (times < MARK_LIMIT && stillHolds(element)) {
+      setAttribute.call(element, HELD_ATTRIBUTE, '');
+    } else {
+      held.delete(element);
+      scheduleWalk(element);
+    }
+  }
+
+  // Takes the marks off everything in a subtree.
+  function letGoIn(root) {
+    for (const element of queryAll(root, HELD_SELECTOR)) {
+      letGoOf(element);
+    }
+    if (isElement(root) && hasAttribute.call(root, HELD_ATTRIBUTE)) letGoOf(root);
   }
 
   // Takes the pieces of a wrapped text out of the document. The anchor is the caller's business.
@@ -336,6 +595,17 @@
     return wrapped.pieces.map((piece) => piece.textContent).join('');
   }
 
+  // Are the pieces still one run of nodes, wherever that is?
+  function isTogether(wrapped) {
+    let node = wrapped.pieces[0];
+    if (!node.parentNode) return false;
+    for (const piece of wrapped.pieces) {
+      if (node !== piece) return false;
+      node = node.nextSibling;
+    }
+    return true;
+  }
+
   // Puts the pieces back right behind their anchor, after the page moved the anchor or put
   // something in between.
   function follow(anchor) {
@@ -343,7 +613,15 @@
     const parent = anchor.parentNode;
     if (!wrapped || !parent || isIntact(anchor, wrapped)) return;
 
-    const fragment = document.createDocumentFragment();
+    // Another script has put nodes of its own in the place of some pieces, as a translator or a
+    // search highlighter does. The pieces it took out are not to come back next to what it
+    // made of them, so what is in the page stays where it is, as ordinary nodes.
+    if (!isTogether(wrapped)) {
+      release(anchor);
+      return;
+    }
+
+    const fragment = createDocumentFragment.call(document);
     for (const piece of wrapped.pieces) {
       fragment.appendChild(piece);
     }
@@ -379,6 +657,15 @@
     return prototype.querySelectorAll.call(root, selector);
   }
 
+  // Gives the texts in an element their nodes back, and takes the marks off.
+  function restoreIn(root) {
+    for (const span of queryAll(root, `.${CLASS_NAME}`)) {
+      const anchor = anchorOf.get(span);
+      if (anchor) restore(anchor);
+    }
+    letGoIn(root);
+  }
+
   function restoreAll() {
     const roots = [document];
     for (const references of [shadowRoots, detachedRoots]) {
@@ -389,10 +676,7 @@
     }
 
     for (const root of roots) {
-      for (const span of queryAll(root, `.${CLASS_NAME}`)) {
-        const anchor = anchorOf.get(span);
-        if (anchor) restore(anchor);
-      }
+      restoreIn(root);
     }
   }
 
@@ -403,7 +687,9 @@
       childList: true,
       subtree: true,
       characterData: true,
-      characterDataOldValue: true
+      characterDataOldValue: true,
+      attributes: true,
+      attributeFilter: WATCHED_ATTRIBUTES
     });
 
     observedRoots.add(root);
@@ -425,7 +711,8 @@
   // wrapped text has to be seen, or our nodes would still show the old text when the element
   // returns.
   function watchDetached(root) {
-    if (observedRoots.has(root) || !querySelector.call(root, `.${CLASS_NAME}`)) return;
+    if (observedRoots.has(root)) return;
+    if (!held.has(root) && !querySelector.call(root, `.${CLASS_NAME}, ${HELD_SELECTOR}`)) return;
 
     observeRoot(root);
     remember(detachedRoots, root);
@@ -481,7 +768,15 @@
       return;
     }
 
-    if (!localNameOf.call(element).includes('-') || namespaceOf.call(element) !== HTML_NAMESPACE) return;
+    const name = localNameOf.call(element);
+    if (namespaceOf.call(element) !== HTML_NAMESPACE) return;
+    if (!name.includes('-')) {
+      if (SHADOW_TAGS.has(name) && !classListOf.call(element).contains(CLASS_NAME)) {
+        const root = closedShadowRootOf(element);
+        if (root) adoptShadowRoot(root);
+      }
+      return;
+    }
 
     // Its next look is due later. Asking chrome.dom is the dear part, so a walk that comes by
     // in the meantime does not ask again.
@@ -560,8 +855,8 @@
 
     if (isSkippedRoot(root)) return null;
 
-    const texts = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    return { root, texts, next: texts.nextNode(), elements: null, index: 0, restarts: 0 };
+    const texts = createTreeWalker.call(document, root, NodeFilter.SHOW_TEXT);
+    return { root, texts, next: texts.nextNode(), elements: null, index: 0, restarts: 0, moved: false };
   }
 
   // Goes on with a walk until the time is up. Returns true when the walk is done.
@@ -577,9 +872,11 @@
 
     if (!walk.elements) {
       // The page may have removed the node the last slice stopped at, and a walker cannot find
-      // its way back from a node that is no longer under its root. Start over: text that is
-      // wrapped already costs next to nothing the second time.
-      if (walk.next && !containsNode.call(root, walk.next)) {
+      // its way back from a node that is no longer under its root. Or it has moved that node to
+      // another place under the root, and going on from there would leave out what lies in
+      // between. Start over: text that is wrapped already costs next to nothing the second time.
+      if (walk.next && (walk.moved || !containsNode.call(root, walk.next))) {
+        walk.moved = false;
         walk.restarts += 1;
         texts.currentNode = root;
         walk.next = texts.nextNode();
@@ -602,6 +899,7 @@
 
       walk.next = null;
 
+      lookAtMarked(root);
       if (isElement(root)) lookForShadowRoot(root);
       walk.elements = queryAll(root, '*');
     }
@@ -678,6 +976,7 @@
   }
 
   function forgetWalks() {
+    toHold = [];
     pendingRoots.clear();
     covered.clear();
     walkQueue = [];
@@ -689,8 +988,12 @@
   // until the page changes the tree again, and the changes made here are no news to the
   // observer: left in its queue, they would look like the page writing to its text nodes.
   function settle() {
-    contextCache.clear();
-    observer.takeRecords();
+    try {
+      holdWaiting();
+    } finally {
+      contextCache.clear();
+      observer.takeRecords();
+    }
   }
 
   function scheduleFlush() {
@@ -752,10 +1055,17 @@
   function pageWroteAnchor(anchor, wrapped, taken) {
     const value = anchor.data;
 
+    // The element has become editable since the text was wrapped, and what was written is what
+    // the user typed. The rest of the text stays, as ordinary nodes.
+    if (isEditable(anchor.parentNode)) {
+      release(anchor);
+      return;
+    }
+
     // A script that runs over every text node and writes each one back also writes the empty
     // anchor, and with it the canary and the rest of our text nodes. That is not the page
     // clearing its text.
-    if (value === '' && taken.size) return;
+    if (value === '' && wrapped.pieces.some((piece) => taken.has(piece))) return;
 
     const { habit, wrap: when } = habits.afterWrite(habitOf.get(anchor), {
       wrapped: true,
@@ -798,14 +1108,29 @@
     // Pieces of ours that the page wrote to. A framework that makes do with the nodes it finds
     // when it takes over server-rendered markup, as Preact does, picks ours up as its own.
     const taken = new Set();
+    // Elements whose `contenteditable` changed, whose mark the page changed, and marked ones
+    // that the page did something else to.
+    const switched = new Set();
+    const remarked = new Set();
+    const touched = new Set();
     // While the document is being parsed, what the parser adds may be the first sign of markup
     // that a framework is going to take over.
-    const parsing = !heldBefore && document.readyState === 'loading';
+    const parsing = !heldBefore && readyStateOf.call(document) === 'loading';
     let serverRendered = false;
     // Nothing was wrapped before these changes, so none of them can have touched a node of ours.
     const nothingOfOurs = !wrappedBefore;
 
     for (const record of records) {
+      if (record.type === 'attributes') {
+        (record.attributeName === HELD_ATTRIBUTE ? remarked : switched).add(record.target);
+        continue;
+      }
+
+      if (!nothingOfOurs) {
+        const holder = record.type === 'characterData' ? parentNodeOf.call(record.target) : record.target;
+        if (holder && held.has(holder)) touched.add(holder);
+      }
+
       if (record.type === 'characterData') {
         const node = record.target;
         // Comments change this way as well.
@@ -819,6 +1144,20 @@
           written.set(node, record.oldValue || '');
         }
         continue;
+      }
+
+      // A walk that waits for its next slice goes on from a node that it remembers. If that
+      // node is taken out, alone or with something around it, the walk has to find its place
+      // anew.
+      if (currentWalk && currentWalk.next && !currentWalk.moved) {
+        const { removedNodes } = record;
+        for (let index = 0; index < removedNodes.length; index += 1) {
+          const node = removedNodes[index];
+          if (node === currentWalk.next || (isElement(node) && containsNode.call(node, currentWalk.next))) {
+            currentWalk.moved = true;
+            break;
+          }
+        }
       }
 
       // The two lists are gone through by index: on a page that adds tens of thousands of
@@ -846,12 +1185,35 @@
       }
     }
 
-    if (serverRendered) holdBack();
-
     try {
+      for (const element of switched) {
+        if (!isElement(element)) continue;
+        if (isEditable(element)) {
+          restoreIn(element);
+        } else {
+          scheduleWalk(element);
+        }
+      }
+
+      for (const element of remarked) {
+        pageChangedMark(element);
+      }
+      // Before the texts that were written are looked at, so that those find the marks as
+      // they should be.
+      for (const element of touched) {
+        if (held.has(element) && !stillHolds(element)) scheduleWalk(element);
+      }
+
       for (const [node, parent] of removed) {
         const wrapped = wrappedTexts.get(node);
         if (!wrapped) continue;
+
+        // Taken out of an element that has become editable: by the user's editing, then, and
+        // the rest of the text is not to go with it.
+        if (isEditable(parent)) {
+          release(node);
+          continue;
+        }
 
         if (node.isConnected) {
           // The page moved its text node. The text goes with it, unless the page is moving the
@@ -915,6 +1277,9 @@
       for (const node of removed.keys()) {
         if (isElement(node) && !isConnectedOf.call(node)) watchDetached(node);
       }
+
+      // Last, so that it also reaches what these changes took out of the document.
+      if (serverRendered) holdBack();
     } finally {
       settle();
     }
@@ -964,7 +1329,7 @@
     startRetryTimer = window.setInterval(() => {
       startRetries += 1;
       if (startRetries >= START_RETRY_LIMIT) cancelStartRetry();
-      if (document.readyState !== 'loading') syncState();
+      if (readyStateOf.call(document) !== 'loading') syncState();
     }, START_RETRY_MS);
   }
 
@@ -978,7 +1343,7 @@
   // Scripts that run while the page loads may give ordinary elements a shadow root after the
   // walk has passed them. One more walk shortly after loading finds those.
   function rescanAfterLoad() {
-    if (document.readyState === 'complete') return;
+    if (readyStateOf.call(document) === 'complete') return;
 
     window.addEventListener('load', () => {
       if (!observerActive) return;
@@ -1026,22 +1391,27 @@
     }
 
     pendingWraps.clear();
+    toHold = [];
     hostChecks.clear();
     waitingHosts = new WeakSet();
     hostTick = 0;
     forgetWalks();
     scheduled = false;
 
+    // A document is held back once, and switching off and on again does not start that anew.
+    // Unless it was switched off in the middle of it: then the framework may still be to come.
+    if (holding) heldBefore = false;
     if (endHold) endHold();
     endHold = null;
     holding = false;
-    heldBefore = false;
 
     // Switched off means off: the page gets its text nodes back as they were.
     if (observerActive) restoreAll();
 
     shadowRoots.clear();
     detachedRoots.clear();
+    held = new WeakMap();
+    unmarked = new WeakMap();
     observedRoots = new WeakSet();
     missedRoots = new WeakSet();
     observerActive = false;
@@ -1056,6 +1426,6 @@
   }
 
   state.subscribe(syncState);
-  document.addEventListener('DOMContentLoaded', syncState, { once: true });
+  listen.call(document, 'DOMContentLoaded', syncState, { once: true });
   syncState();
 })();

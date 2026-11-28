@@ -208,4 +208,18 @@ describe('places that must be left alone', skipWithoutChrome, () => {
     assert.deepEqual(page.errors, []);
     await page.close();
   });
+
+  test('the rows of an xterm.js terminal', async () => {
+    const page = await browser.open({
+      body: `<div class="terminal xterm"><div class="xterm-screen"><div class="xterm-rows"><div><span>$ echo ${E.grin}</span></div><div><span>${E.grin}</span></div></div></div></div><p id="a">outside ${E.grin}</p>`
+    });
+
+    const result = await page.evaluate(async () => {
+      await __t.settle();
+      return { terminal: __t.count('.xterm'), outside: __t.count('#a') };
+    });
+
+    assert.deepEqual(result, { terminal: 0, outside: 1 });
+    await page.close();
+  });
 });

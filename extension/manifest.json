@@ -20,7 +20,7 @@
     "content_scripts": [
         {
             "matches": [
-                "\u003call_urls\u003e"
+                "<all_urls>"
             ],
             "js": [
                 "scripts/settings.js",
@@ -37,7 +37,7 @@
         },
         {
             "matches": [
-                "\u003call_urls\u003e"
+                "<all_urls>"
             ],
             "js": [
                 "scripts/page_probe.js"
@@ -52,7 +52,7 @@
                 "fonts/NotoColorEmoji.ttf"
             ],
             "matches": [
-                "\u003call_urls\u003e"
+                "<all_urls>"
             ]
         }
     ],

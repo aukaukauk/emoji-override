@@ -6,6 +6,13 @@
   const RESTORE_LIMIT = 20;
   const RESTORE_WINDOW_MS = 1000;
 
+  // When the settings cannot be read, they are asked for again after these waits.
+  const RETRY_AFTER_MS = [500, 2000, 8000];
+
+  // A page can give an element the name `documentElement`, and `document.documentElement` is
+  // then that element.
+  const rootOf = Object.getOwnPropertyDescriptor(Document.prototype, 'documentElement').get;
+
   // Published by settings.js, which runs first in the same isolated world.
   const shared = globalThis.__notoEmojiOverride;
   if (!shared || !shared.settings) return;
@@ -39,7 +46,9 @@
 
     try {
       const { platformVersion } = await data.getHighEntropyValues(['platformVersion']);
-      return parseInt(platformVersion, 10) >= WINDOWS_11 ? 'windows' : '';
+      const major = parseInt(platformVersion, 10);
+      // A page may keep the version to itself, and the answer is then an empty text.
+      return Number.isNaN(major) || major >= WINDOWS_11 ? 'windows' : '';
     } catch {
       // The version cannot be asked for. Windows 11 is the likely one by now.
       return 'windows';
@@ -57,7 +66,7 @@
   const wantedMarker = () => (state.active ? markerValue : null);
 
   function syncMarker() {
-    const root = document.documentElement;
+    const root = rootOf.call(document);
     if (!root) return;
 
     if (root !== markedRoot) {
@@ -93,7 +102,7 @@
   // the element itself (document.open), which takes the marker with it. Put it back, unless the
   // page keeps undoing that.
   function restoreMarker() {
-    const root = document.documentElement;
+    const root = rootOf.call(document);
     if (abandoned || !root) return;
     if (root === markedRoot && root.getAttribute(ENABLED_ATTRIBUTE) === wantedMarker()) return;
 
@@ -102,8 +111,9 @@
     restoreTimes.push(now);
 
     if (restoreTimes.length > RESTORE_LIMIT) {
-      abandoned = true;
+      // The marker is taken off one last time. What the page writes there after that is its own.
       setActive(false);
+      abandoned = true;
       return;
     }
 
@@ -113,10 +123,31 @@
   const markerObserver = new MutationObserver(restoreMarker);
   const rootObserver = new MutationObserver(restoreMarker);
 
+  // Reads can overlap, and only the answer of the one that was started last counts.
+  let reads = 0;
+  let retries = 0;
+  let retryTimer = 0;
+
   async function readState() {
-    // A storage area that cannot be read counts as empty, which leaves replacement on.
+    const id = ++reads;
+    window.clearTimeout(retryTimer);
+
     const [current, system] = await Promise.all([settings.read({ tolerant: true }), emojiOfSystem]);
+    if (id !== reads) return;
     markerValue = system;
+
+    if (!current.complete) {
+      // Not knowing the settings is no reason to act against them: the user may have switched
+      // the extension off, or blocked this site because it does not get along with it. So
+      // everything stays as it is, which before the first answer means off, and the settings
+      // are asked for again a few times.
+      if (retries < RETRY_AFTER_MS.length) {
+        retryTimer = window.setTimeout(readState, RETRY_AFTER_MS[retries]);
+        retries += 1;
+      }
+      return;
+    }
+    retries = 0;
 
     // A settings change is a fresh start for a page that had been left alone.
     abandoned = false;

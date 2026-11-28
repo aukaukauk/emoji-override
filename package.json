@@ -4,7 +4,7 @@
   "description": "Development tools for the Noto Emoji Override extension. The extension itself, in extension/, has no dependencies and no build step.",
   "license": "MIT",
   "engines": {
-    "node": ">=22"
+    "node": "^22.13.0 || >=24"
   },
   "scripts": {
     "lint": "eslint .",

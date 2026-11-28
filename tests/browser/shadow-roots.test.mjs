@@ -40,13 +40,14 @@ describe('shadow roots that arrive late', skipWithoutChrome, () => {
 
   test('a custom element that waits for a shadow root is asked for it when its turn comes, not by every walk', async () => {
     // Closed shadow roots are asked for through an extension API. This stands in for it, and
-    // notes every question.
+    // notes every question about a custom element. (Plain elements are asked about by every
+    // walk that comes by, and never again in between.)
     const init = `(() => {
       const roots = new WeakMap();
       window.__closedRoots = { roots, asked: 0 };
       window.chrome.dom = {
         openOrClosedShadowRoot(element) {
-          window.__closedRoots.asked += 1;
+          if (element.localName.includes('-')) window.__closedRoots.asked += 1;
           return roots.get(element) || element.shadowRoot;
         }
       };
@@ -126,6 +127,50 @@ describe('shadow roots that arrive late', skipWithoutChrome, () => {
       on: { wrapped: 1, nodes: 5 },
       off: { wrapped: 0, nodes: 1, text: `shadow ${E.grin} text` }
     });
+    await page.close();
+  });
+
+  test('a closed shadow root on a plain element is found by the walk that comes by', async () => {
+    const init = `(() => {
+      const roots = new WeakMap();
+      window.__closedRoots = roots;
+      window.chrome.dom = { openOrClosedShadowRoot: (element) => roots.get(element) || element.shadowRoot };
+    })();`;
+    const page = await browser.open({
+      init,
+      body: `<div id="widget"></div><script>
+  const root = document.getElementById('widget').attachShadow({ mode: 'closed' });
+  root.innerHTML = '<p>closed ${E.grin} text</p>';
+  window.__closedRoots.set(document.getElementById('widget'), root);
+  window.widgetRoot = root;
+</script>`
+    });
+
+    const result = await page.evaluate(async () => {
+      await __t.settle();
+      return __t.count(window.widgetRoot);
+    });
+
+    assert.equal(result, 1);
+    assert.deepEqual(page.errors, []);
+    await page.close();
+  });
+
+  test('a wrapper in a shadow root keeps its font and stays without a box, whatever the rules there say about spans', async () => {
+    const page = await browser.open({
+      body: `<div id="host"></div><script>
+  document.getElementById('host').attachShadow({ mode: 'open' }).innerHTML =
+    '<style>span { display: inline-block !important; font-family: serif !important; }</style><p>shadow ${E.grin} text</p>';
+</script>`
+    });
+
+    const result = await page.evaluate(async () => {
+      await __t.settle();
+      const style = getComputedStyle(document.getElementById('host').shadowRoot.querySelector('.noto-emoji-wrapped'));
+      return { display: style.display, font: style.fontFamily.split(',')[0].replace(/["']/g, '').replace(/(Mac|Windows)$/, '') };
+    });
+
+    assert.deepEqual(result, { display: 'contents', font: 'EmojiOverrideNoto' });
     await page.close();
   });
 });
