@@ -154,18 +154,25 @@ describe('wrapped text that is changed from outside', skipWithoutChrome, () => {
   });
 
   test('a walk that is waiting for its next turn starts over when the page moves the node it stopped at', async () => {
-    // Enough text that the first walk takes more than one turn.
-    const page = await browser.open({
-      body: `<div id="list">${Array.from({ length: 6000 }, (_, index) => `<p>item ${index} ${E.grin} text</p>`).join('')}</div>`
-    });
+    const page = await browser.open({ body: '<div id="host"></div>' });
 
-    const result = await page.evaluate(async () => {
-      const list = document.getElementById('list');
-      const total = list.children.length;
+    const result = await page.evaluate(async (grin) => {
+      // A second after the page has loaded, one more walk goes over all of it. That walk would
+      // make up for what is checked here, so it is waited for first.
+      await __t.sleep(1200);
+      await __t.settle();
+
+      // Enough text that its walk takes more than one turn, and all of it in one element that
+      // arrives at once: elements that arrive one by one are each walked on their own.
+      const total = 6000;
+      const list = document.createElement('div');
+      list.innerHTML = Array.from({ length: total }, (_, index) => `<p>item ${index} ${grin} text</p>`).join('');
+      document.getElementById('host').appendChild(list);
+
       // Wait until some of it is done and some is not, then move the first item that is not to
       // the end, as a list does that puts its rows to new use.
       let moved = false;
-      for (let turn = 0; turn < 400 && !moved; turn += 1) {
+      for (let turn = 0; turn < 2000 && !moved; turn += 1) {
         await new Promise((resolve) => setTimeout(resolve, 0));
         const done = __t.count(list);
         if (done > 0 && done < total - 200) {
@@ -174,10 +181,21 @@ describe('wrapped text that is changed from outside', skipWithoutChrome, () => {
           moved = true;
         }
       }
-      // The rest takes a number of turns.
-      for (let waited = 0; waited < 5000 && __t.count(list) < total; waited += 100) await __t.sleep(100);
-      return { moved, wrapped: __t.count(list), total };
-    });
+
+      // The rest takes a number of turns, and many more of them on a slow machine. So the wait
+      // lasts for as long as the count still grows, and ends when it has stood still for a while.
+      let wrapped = __t.count(list);
+      let grewAt = performance.now();
+      while (wrapped < total && performance.now() - grewAt < 5000) {
+        await __t.sleep(100);
+        const now = __t.count(list);
+        if (now > wrapped) {
+          wrapped = now;
+          grewAt = performance.now();
+        }
+      }
+      return { moved, wrapped, total };
+    }, E.grin);
 
     // On a machine that does all of it in one turn there is nothing to move, and nothing to check.
     if (result.moved) assert.equal(result.wrapped, result.total);
