@@ -7,8 +7,12 @@
   // U+200D is the zero width joiner, U+FE0F and U+FE0E select emoji and text presentation, and
   // U+20E3 is the keycap that encloses a digit. They are written as escapes because they are
   // invisible in an editor.
+  //
+  // The joiner is not among the characters that make a text worth a closer look. An emoji that
+  // has one also has a character that is: every kind of emoji cluster below needs one. And
+  // Sinhala, Malayalam and other scripts use the joiner in ordinary words.
   const RECENT_EMOJI_REGEX = /[\u{1F6D8}\u{1FA89}\u{1FA8A}\u{1FA8E}\u{1FA8F}\u{1FABE}\u{1FAC6}\u{1FAC8}\u{1FACD}\u{1FADC}\u{1FADF}\u{1FAE9}\u{1FAEA}\u{1FAEF}]/u;
-  const BROAD_EMOJI_REGEX = /[\u{200D}\u{FE0F}\u{20E3}]|\p{Emoji_Presentation}|\p{Regional_Indicator}|[\u{1F6D8}\u{1FA89}\u{1FA8A}\u{1FA8E}\u{1FA8F}\u{1FABE}\u{1FAC6}\u{1FAC8}\u{1FACD}\u{1FADC}\u{1FADF}\u{1FAE9}\u{1FAEA}\u{1FAEF}]/u;
+  const BROAD_EMOJI_REGEX = /[\u{FE0F}\u{20E3}]|\p{Emoji_Presentation}|\p{Regional_Indicator}|[\u{1F6D8}\u{1FA89}\u{1FA8A}\u{1FA8E}\u{1FA8F}\u{1FABE}\u{1FAC6}\u{1FAC8}\u{1FACD}\u{1FADC}\u{1FADF}\u{1FAE9}\u{1FAEA}\u{1FAEF}]/u;
   const EMOJI_PRESENTATION_REGEX = /\p{Emoji_Presentation}/u;
   const EMOJI_VARIATION_REGEX = /\p{Emoji}\u{FE0F}/u;
   const KEYCAP_REGEX = /^[#*0-9]\u{FE0F}?\u{20E3}$/u;
